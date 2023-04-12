@@ -1,26 +1,15 @@
 <!-- DownloadButton.svelte -->
 <template>
-  {#if folder.fId || folder.fId.length === 0 }
-    <button class="sync-button" on:click={sync}>Sync</button>
-  {:else}
-    <button class="download-button" on:click={download}>Download</button>
-  {/if}
+    <Button size="small" kind="tertiary" on:click={download}>Download</Button>
 </template>
 <script>
-  import { useCanister } from "@connect2ic/svelte";
-  import {convert2CandidFileTree} from "../../utils";
+  import { Button } from "carbon-components-svelte";
+  import {getIsFolder} from "../../utils";
 
   export let folder;
 
-  const [fileRegistry, { loading }] = useCanister("registry")
-
-  async function sync() {
-      let x = convert2CandidFileTree(folder);
-      let ret = await $fileRegistry.registerFileTree(x);
-      console.log(ret);
-  }
-
   async function download() {
+    console.log(folder);
     const dirHandle = await window.showDirectoryPicker();
     await createDirectory(dirHandle, folder);
   }
@@ -40,22 +29,24 @@
   }
 
   async function createDirectory(dirEntry, fileTree) {
-    const name = fileTree.name;
-    const curDir = await dirEntry.getDirectoryHandle(name, { create: true });
-    for (const child of fileTree.children) {
-        if (child.kind === "directory") {
+    const curDir = await dirEntry.getDirectoryHandle(fileTree.fName, { create: true });
+    for (const child of fileTree.children[0]) {
+        if (getIsFolder(child.fType)) {
            createDirectory(curDir, child);
         } else {
-          const fileName = child.name;
-          let curFile = await curDir.getFileHandle(fileName, { create: true });
-          createFile(curFile, child.fData);
+          if (child.fData && child.fData.length > 0) {
+            let curFile = await curDir.getFileHandle(child.fName, { create: true });
+            createFile(curFile, child.fData);
+          } else {
+            alert("You need sync first!");
+          }
         }
       }
   }
 
 </script>
 <style>
-  .download-button {
+  /* .download-button {
     padding: 0.5rem 1rem;
     background-color: #4CAF50;
     color: white;
@@ -66,5 +57,5 @@
   }
   .download-button:hover {
     background-color: #3E8E41;
-  }
+  } */
 </style>

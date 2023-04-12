@@ -18,4 +18,6 @@ export const principal = writable(null);
 export const daoActor = writable(null);
 export const ledgerActor = writable(null);
 export const neuron = writable(null);
-export const listFolders = writable([]);
+export const serverFileTrees = writable([]);
+export const localFileTrees = writable([]);
+export const syncFiles = writable([]);

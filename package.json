@@ -15,6 +15,7 @@
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "next",
     "buffer": "^6.0.3",
+    "carbon-components-svelte": "^0.73.5",
     "svelte": "^3.42.5",
     "svelte-preprocess": "^4.10.7",
     "vite": "^2.9.13"
