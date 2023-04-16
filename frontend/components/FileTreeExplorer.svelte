@@ -14,7 +14,8 @@
             Row,
             OrderedList, 
             ListItem, 
-            Button } from "carbon-components-svelte";
+            Button,
+            Loading } from "carbon-components-svelte";
   import {
     Header,
     HeaderNav,
@@ -31,6 +32,8 @@
     }
   })
   const [fileTreeRegistry] = useCanister("registry")
+  const [fileTest] = useCanister("test")
+
   let directoryHandle;
   let directoryHandlePointer = {};
   let auth = false;
@@ -60,13 +63,62 @@
       });
     // let r = await objectStore.add(fileTree);
     let tmp = await $fileTreeRegistry.verifyFileTree(fileTree);
+    
+    
+    let test = await $fileTest.test(fileTree);
+    console.log("TEST");
+    console.log(test);
+
+    // let testPath = await $fileTest.testPath(fileTree);
+    // console.log("TEST PATH");
+    // console.log(testPath);
+
+    // let testNodeInfo = await $fileTest.testNodeInfo(fileTree);
+    // console.log("TEST NODE INFO");
+    // console.log(testNodeInfo);
+
+
+    // let testMove = await $fileTest.testMove(fileTree, "/abc/def", "/abc/def/ghj");
+    // console.log("TEST MOVE");
+    // console.log(testMove);
+
+    // testPath = await $fileTest.testPath(testMove);
+    // console.log("TEST PATH");
+    // console.log(testPath);
+
+    // testNodeInfo = await $fileTest.testNodeInfo(testMove);
+    // console.log("TEST NODE INFO");
+    // console.log(testNodeInfo);
+
+
+    
     directoryHandlePointer[fileTree.fName] = directoryHandle;
     // after verify if data changing -> update fileTree
-    $localFileTrees = [...$localFileTrees, fileTree];
+    $localFileTrees = [fileTree];
+    reload();
+
     console.log("verify done");
     console.log(tmp);
     toogleSyncModal(false);
   }
+
+  function reload() {
+    promise = reloadFileTrees();
+  }
+
+  async function reloadFileTrees() {
+    let ret = await $fileTreeRegistry.getListFileTree();
+    if (ret.ok) {
+        $serverFileTrees = ret.ok;
+        return [...$localFileTrees, ...$serverFileTrees];
+    } else {
+      console.log("getListFileTree #ERR:");
+      console.log(ret);
+    }
+    return null;
+  }
+
+  let promise = null;
 
   onMount(async () => {
     var startTime = new Date().getTime();
@@ -78,14 +130,16 @@
         //do whatever here..
         if (auth) {
           clearInterval(interval);
-          let ret = await $fileTreeRegistry.getListFileTree();
-          if (ret.ok) {
-              $serverFileTrees = ret.ok;
-              $localFileTrees = [...$localFileTrees, ...$serverFileTrees];
-          } else {
-            console.log("getListFileTree #ERR:");
-            console.log(ret);
-          }
+          // let ret = await $fileTreeRegistry.getListFileTree();
+          // if (ret.ok) {
+          //     $serverFileTrees = ret.ok;
+          //     $localFileTrees = [...$localFileTrees, ...$serverFileTrees];
+          // } else {
+          //   console.log("getListFileTree #ERR:");
+          //   console.log(ret);
+          // }
+          reload();
+
           let whoami = await $fileTreeRegistry.whoami();
           console.log("WHO ARE YOU 2");
           console.log(whoami);
@@ -125,11 +179,18 @@
     <HowToUse/>
 
     <Grid fullWidth style="padding-top: 50px;">
-        {#each $localFileTrees as f}
-        <Row padding style="border: 1px solid white;border-radius: 10px;padding;margin-top: 5px;">
-          <FileTreeItem fileTree={f} directoryHandle={directoryHandlePointer[f.fName]} toogleModal={toogleSyncModal}/>
-        </Row>
-        {/each}
+      {#if promise != null}
+        {#await promise then list}
+          {#each list as f}
+          <Row padding style="border: 1px solid white;border-radius: 10px;padding;margin-top: 5px;">
+            <FileTreeItem fileTree={f} directoryHandle={directoryHandlePointer[f.fName]} toogleModal={toogleSyncModal} reloadAction={reload}/>
+          </Row>
+          {/each}
+        {/await}
+      {:else}
+          <Loading/>
+      {/if}
+        
     </Grid>
     
   

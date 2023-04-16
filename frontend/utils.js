@@ -63,11 +63,7 @@ import md5 from 'md5';
 
   function getFileTreeData(fileTree) {
     let fileArray = recursiveCollectFileData(fileTree);
-    let ret = {};
-    for (const f of fileArray) {
-        ret[f.fHash[0]] = f;
-    }
-    return ret;
+    return fileArray;
   }
 
   function recursiveCollectFileData(fileTree) {

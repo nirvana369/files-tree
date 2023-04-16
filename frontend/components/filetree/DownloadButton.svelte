@@ -7,11 +7,18 @@
   import {getIsFolder} from "../../utils";
 
   export let folder;
+  export let toogleInAction;
 
   async function download() {
+    toogleInAction(true);
     console.log(folder);
-    const dirHandle = await window.showDirectoryPicker();
-    await createDirectory(dirHandle, folder);
+    try {
+      const dirHandle = await window.showDirectoryPicker();
+      await createDirectory(dirHandle, folder);
+    } catch (error) {
+      console.error("Failed to select folder:", error);
+    }
+    toogleInAction(false);
   }
 
   async function createFile(fileHandle, content) {
