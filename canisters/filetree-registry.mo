@@ -1,7 +1,7 @@
 import FileStorage "file-storage";
 import ICType "IC";
 import Types "types";
-import FileManager "file-manager";
+import Utils "file-manager";
 
 import Result "mo:base/Result";
 import Principal "mo:base/Principal";
@@ -43,7 +43,7 @@ shared ({caller}) actor class FileRegistry() = this {
     let _numberOfDataPerCanister : Nat = DATASTORE_CANISTER_CAPACITY / FILE_DATA_SIZE;
 
     var IdGen : Nat = 0;
-    var IdGenFile = 0;
+    var IdGenFile : Nat = 0;
 
     stable var UserIdGen : Nat = 0;
 
@@ -83,13 +83,12 @@ shared ({caller}) actor class FileRegistry() = this {
 
         // loop and recursive compare file name && file hash && 
 
-        let fileManager = FileManager.FileTree(fileTree);
+        let fileManager = Utils.FileManager(fileTree);
         fileManager.verify();
     };
 
     public shared ({caller}) func createFileTree(fileTree : Types.FileTree) : async Result.Result<Types.FileTree, Text> {
-        let fileManager = FileManager.FileTree(fileTree);
-        let files  = fileManager.getListFile();
+        let fileManager = Utils.FileManager(fileTree);
         IdGen := IdGen + 1;
         await fileManager.asyncIterFiles(func (f : Types.MutableFileTree) : async () {
             let file : Types.File = {
@@ -109,24 +108,6 @@ shared ({caller}) actor class FileRegistry() = this {
             f.canisterId := Principal.toText(storageCanisterId);
             f.state := registeredFile.state;
         });
-        // for (f in files.vals()) {
-        //     let file : Types.File = {
-        //                 rootId = IdGen;
-        //                 id = _createFileId();
-        //                 name = f.name;
-        //                 hash = f.hash;
-        //                 chunks = [];
-        //                 totalChunk = f.totalChunk;
-        //                 state = #empty;
-        //                 owner = caller;
-        //                 size = f.size;
-        //                 lastTimeUpdate = Time.now();
-        //             };
-        //     let (storageCanisterId, registeredFile) = await _registerFile(file);
-        //     f.id := registeredFile.id;
-        //     f.canisterId := Principal.toText(storageCanisterId);
-        //     f.state := registeredFile.state;
-        // };
         
         // update FileTree -> file will have canister id + id
         
@@ -167,7 +148,7 @@ shared ({caller}) actor class FileRegistry() = this {
             };
         };
         let fTreeId = fTree.id;
-        let fileManager = FileManager.FileTree(fileTree);
+        let fileManager = Utils.FileManager(fileTree);
         let files  = fileManager.getListFile();
       
         for (f in files.vals()) {
@@ -225,16 +206,13 @@ shared ({caller}) actor class FileRegistry() = this {
         switch (_getFileTree(id)) {
             case null #err "File tree are not exist!";
             case (?fTree) {
-                let fileManager = FileManager.FileTree(fTree);
-                let files  = fileManager.getListFile();
-
-                for (f in files.vals()) {
+                let fileManager = Utils.FileManager(fTree);
+                await fileManager.asyncIterFiles(func (f : Types.MutableFileTree) : async () {
                     if (f.canisterId != "" and f.id > 0) {
                         let storageCanister : Types.FileStorage = actor(f.canisterId);
                         let ret = await storageCanister.deleteFile(f.id);
                     }
-                };
-
+                });
                 _fileTreeStorage.delete(id);
                 _removeRegistry(caller, id);
                 #ok id;
@@ -247,11 +225,13 @@ shared ({caller}) actor class FileRegistry() = this {
         switch (_getFileTree(id)) {
             case null #err "File tree are not exist!";
             case (?fTree) {
-                let fileManager = FileManager.FileTree(fTree);
-                fileManager.index();
-                fileManager.moveAtoB(pathA, pathB);
+                let fileManager = Utils.FileManager(fTree);
+                fileManager.init();
+
+                fileManager.move(pathA, pathB);
                 let immutableFileTree = fileManager.freeze();
                 _putFileTree(id, immutableFileTree);
+                
                 #ok (immutableFileTree);
             };
         };
@@ -309,14 +289,8 @@ shared ({caller}) actor class FileRegistry() = this {
             case null return #err "File not exist";
             case (?ft) ft;
         };
-        let fileManager = FileManager.FileTree(fileTree);
-        var fileFound : ?Types.MutableFileTree = null;
-        fileManager.findById(fileId, func (x) {
-            if (x.fType == #file) {
-                fileFound := ?x;
-            };
-        });
-        let f = switch(fileFound) {
+        let fileManager = Utils.FileManager(fileTree);
+        let f = switch(fileManager.getBy(?#file, ?#id(fileId))) {
             case null return #err ("File " # Nat.toText(fileId) # " not found");  
             //
             case (?file) {
@@ -340,11 +314,9 @@ shared ({caller}) actor class FileRegistry() = this {
         switch (fileTree) {
             case null {};
             case (?ft) {
-                let fileManager = FileManager.FileTree(ft);
-                fileManager.findById(fileId, func (x) {
-                    if (x.fType == #file) {
+                let fileManager = Utils.FileManager(ft);
+                fileManager.find(?#file, ?#id(fileId), func (x) {
                         x.state := state;
-                    };
                 });
                 let imutableFileTree = fileManager.freeze();
                 _putFileTree(id, imutableFileTree);
@@ -353,14 +325,8 @@ shared ({caller}) actor class FileRegistry() = this {
     };
 
     private func _getFile(fileTree : Types.FileTree, fileId : Nat) : async ?Types.File {
-         let fileManager = FileManager.FileTree(fileTree);
-        var fileFound : ?Types.MutableFileTree = null;
-        fileManager.findById(fileId, func (x) {
-            if (x.fType == #file) {
-                fileFound := ?x;
-            };
-        });
-        let f = switch(fileFound) {
+        let fileManager = Utils.FileManager(fileTree);
+        let f = switch(fileManager.getBy(?#file, ?#id(fileId))) {
             case null return null;
             //
             case (?file) {
@@ -378,14 +344,8 @@ shared ({caller}) actor class FileRegistry() = this {
             case null return #err "File not exist";
             case (?ft) ft;
         };
-        let fileManager = FileManager.FileTree(fileTree);
-        var fileFound : ?Types.MutableFileTree = null;
-        fileManager.findById(fileId, func (x) {
-            if (x.fType == #file) {
-                fileFound := ?x;
-            };
-        });
-        let f = switch(fileFound) {
+        let fileManager = Utils.FileManager(fileTree);
+        let f = switch(fileManager.getBy(?#file, ?#id(fileId))) {
             case null return #err ("File " # Nat.toText(fileId) # " not found");  
             //
             case (?file) {

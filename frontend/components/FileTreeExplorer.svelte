@@ -71,13 +71,13 @@
     let tmp = await $fileTreeRegistry.verifyFileTree(fileTree);
     
     
-    let test = await $fileTest.test(fileTree);
-    console.log("TEST");
-    console.log(test);
+    // let test = await $fileTest.test(fileTree);
+    // console.log("TEST");
+    // console.log(test);
 
-    // let testPath = await $fileTest.testPath(fileTree);
-    // console.log("TEST PATH");
-    // console.log(testPath);
+    let testPath = await $fileTest.add(fileTree);
+    console.log("TEST PATH");
+    console.log(testPath);
 
     // let testNodeInfo = await $fileTest.testNodeInfo(fileTree);
     // console.log("TEST NODE INFO");

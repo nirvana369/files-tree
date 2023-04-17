@@ -3,7 +3,7 @@ import Result "mo:base/Result";
 
 module {
 
-    public type FileTreeType = {
+    public type FileType = {
         #directory;
         #file;
     };
@@ -15,7 +15,7 @@ module {
 
     public type FileTree = {
         id : Nat;
-        fType : FileTreeType;
+        fType : FileType;
         name : Text;
         canisterId : Text;
         hash : Text;
@@ -27,7 +27,7 @@ module {
 
     public type MutableFileTree = {
         var id : Nat;
-        var fType : FileTreeType;
+        var fType : FileType;
         var name : Text;
         var canisterId : Text;
         var hash : Text;

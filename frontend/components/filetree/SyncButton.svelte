@@ -15,7 +15,9 @@
           getIsFolder, 
           getFileTreeData, 
           traverseDirectory,
-          mergeUInt8Arrays} from "../../utils";
+          mergeUInt8Arrays,
+          downloadFile
+          } from "../../utils";
   import { localFileTrees, syncFiles } from "../../stores.js"
   import { useConnect } from "@connect2ic/svelte"
   import md5 from 'md5';
@@ -77,9 +79,13 @@
     toogleInAction(true);
     toogleEnableDownload(false, folder);
     $syncFiles = [];
-    let syncFoler = await sync();
-    if (syncFoler != null) {
-      toogleEnableDownload(true, syncFoler);
+    try {
+      let syncFoler = await sync();
+      if (syncFoler != null) {
+        toogleEnableDownload(true, syncFoler);
+      }
+    } catch (e) {
+      console.log(e);
     }
     toogleInAction(false);
   }
@@ -143,6 +149,7 @@
         }
       });
       toogleModal(false);
+
       console.log("READY TO DOWNLOAD");
       console.log(folder);
       return folder;
@@ -228,7 +235,7 @@
         
     }
     if (err == 0) {
-      fileMap[file.hash] = [chunkData];
+      fileMap[file.hash] = chunkData;
       $syncFiles = [...$syncFiles, file.name];
     }
     

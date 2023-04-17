@@ -129,6 +129,7 @@ shared ({caller}) actor class FileStorage() = this {
         //     Debug.trap("You need add some cycle to canister registry: " # Principal.toText(_admin));
         // };
         _datastores.put(file.id, file);
+        totalCanisterDataSize := totalCanisterDataSize + 1_000; // 1 kB metadata
         return file;
     };
 
@@ -154,31 +155,40 @@ shared ({caller}) actor class FileStorage() = this {
             };
         };
         _datastores.delete(id);
+        totalCanisterDataSize := totalCanisterDataSize - 1_000; // 1 kB metadata
         #ok id;
     };
 
     // CHUNK SECTION
 
     public shared ({caller}) func deleteChunk(chunkId : Nat) : async () {
-        _chunkCache.delete(chunkId);
+        switch (_chunkCache.get(chunkId)) {
+            case null ();
+            case (?chunk) {
+                totalCanisterDataSize := totalCanisterDataSize - chunk.data.size();
+                _chunkCache.delete(chunkId);
+            };
+        }
     };
     
-    public shared ({caller}) func streamUp(fileCanisterId : Text, fchunk : FileChunk) : async ?Nat {
+    public shared ({caller}) func streamUp(fileCanisterId : Text, chunk : FileChunk) : async ?Nat {
         // let (fileOwner, fileRegistered) = _getPermission(caller, fchunk.owner, fchunk.fileId);
         assert(caller == _admin);
 
         // does need verify file first ?
         IdGenChunk := IdGenChunk + 1;
 
-        _chunkCache.put(IdGenChunk, fchunk);
+        _chunkCache.put(IdGenChunk, chunk);
 
         let chunkInfo : Types.ChunkInfo = {
             canisterChunkId = IdGenChunk;
             canisterId = Principal.toText(Principal.fromActor(this));
-            chunkOrderId = fchunk.chunkOrderId;
+            chunkOrderId = chunk.chunkOrderId;
         };
 
-        ignore notify(fileCanisterId, (#StreamUpChunk (fchunk.fileId, chunkInfo)));
+        ignore notify(fileCanisterId, (#StreamUpChunk (chunk.fileId, chunkInfo)));
+
+        totalCanisterDataSize := totalCanisterDataSize + chunk.data.size();
 
         (?IdGenChunk);
     };

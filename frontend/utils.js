@@ -149,9 +149,48 @@ import md5 from 'md5';
     return mergedArray;
   }
   
+  async function downloadFile(dirHandle, folder, fileMap) {
+    console.log("UTILS DOWNLOAD file");
+    console.log(fileMap);
+    console.log(folder);
+    await createDirectory(dirHandle, folder, fileMap);
+  }
+
+  async function createFile(fileHandle, content) {
+    // convert [uint8] -> ArrayBuffer -> Blob
+    let blob = new Blob([new Uint8Array(content).buffer]);
+    /**
+     * Secure context : fileHandle.createWritable()
+     * This feature is available only in secure contexts (HTTPS), in some or all supporting browsers.
+     */
+    const writable = await fileHandle.createWritable();
+    // Write the contents of the file to the stream.
+    await writable.write(blob);
+    // Close the file and write the contents to disk.
+    await writable.close();
+  }
+
+  async function createDirectory(dirEntry, fileTree, fileMap) {
+    const curDir = await dirEntry.getDirectoryHandle(fileTree.name, { create: true });
+    for (const child of fileTree.children) {
+        if (getIsFolder(child.fType)) {
+           createDirectory(curDir, child);
+        } else {
+          const data = fileMap[child.hash];
+          if (data && data.length > 0) {
+            let curFile = await curDir.getFileHandle(child.name, { create: true });
+            createFile(curFile, data);
+          } else {
+            alert("File: " + child.name + " | hash: " + child.hash + " data is empty");
+          }
+        }
+      }
+  }
+
 export {  getIsFolder, 
           traverseDirectory, 
           mergeFileTree,
           getFileTreeData,
-          mergeUInt8Arrays
+          mergeUInt8Arrays,
+          downloadFile
         };
