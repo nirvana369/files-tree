@@ -3,11 +3,11 @@
   <div class="file" class:folder={isFolder} class:open={isOpen}>
     <div class="name" on:click={toggleOpen}>
       {isFolder ? (!isOpen ? '📁' : '📂') : '📜'}
-      {file.fName}
+      {file.name}
     </div>
     {#if isFolder && isOpen}
       <div class="children">
-        {#each file.children[0] as child}
+        {#each file.children as child}
           <FileTree file={child} />
         {/each}
       </div>

@@ -38,6 +38,7 @@
   let directoryHandlePointer = {};
   let auth = false;
   let open = false;
+  let fileMapPointer = {};
 
   async function selectFolder() {
     try {
@@ -55,12 +56,17 @@
       return;
     }
     toogleSyncModal(true);
-    let fileTree = await traverseDirectory(directoryHandle, function(name, content) {
+    let fileMap = {};
+    let fileTree = await traverseDirectory(directoryHandle, function(name, hash, content) {
         const file = { name: name, content: content };
         console.log("your file is : " + name);
         console.log(file);
+        fileMap[hash] = content;
         // save file to localDB ?
       });
+    fileMapPointer[fileTree.name] = fileMap;
+    
+    console.log(fileTree);
     // let r = await objectStore.add(fileTree);
     let tmp = await $fileTreeRegistry.verifyFileTree(fileTree);
     
@@ -92,7 +98,7 @@
 
 
     
-    directoryHandlePointer[fileTree.fName] = directoryHandle;
+    directoryHandlePointer[fileTree.name] = directoryHandle;
     // after verify if data changing -> update fileTree
     $localFileTrees = [fileTree];
     reload();
@@ -107,15 +113,19 @@
   }
 
   async function reloadFileTrees() {
+    let list = [...$localFileTrees];
     let ret = await $fileTreeRegistry.getListFileTree();
     if (ret.ok) {
         $serverFileTrees = ret.ok;
-        return [...$localFileTrees, ...$serverFileTrees];
+        list = [...list, ...$serverFileTrees];
+        console.log("LIST TREE");
+        console.log(list);
+        return list;
     } else {
       console.log("getListFileTree #ERR:");
       console.log(ret);
     }
-    return null;
+    return list;
   }
 
   let promise = null;
@@ -183,7 +193,11 @@
         {#await promise then list}
           {#each list as f}
           <Row padding style="border: 1px solid white;border-radius: 10px;padding;margin-top: 5px;">
-            <FileTreeItem fileTree={f} directoryHandle={directoryHandlePointer[f.fName]} toogleModal={toogleSyncModal} reloadAction={reload}/>
+            <FileTreeItem fileTree={f} 
+                          directoryHandle={directoryHandlePointer[f.name]} 
+                          toogleModal={toogleSyncModal} 
+                          reloadAction={reload}
+                          fileMap={fileMapPointer[f.name] ? fileMapPointer[f.name] : {}}/>
           </Row>
           {/each}
         {/await}
@@ -205,8 +219,8 @@
       labelText="sync..."
     />
     <OrderedList>
-      {#each $syncFiles as fname}
-        <ListItem>{fname}</ListItem>
+      {#each $syncFiles as name}
+        <ListItem>{name}</ListItem>
       {/each}
     </OrderedList>
     </Modal>

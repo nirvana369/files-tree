@@ -10,7 +10,10 @@ import Array "mo:base/Array";
 import Nat8 "mo:base/Nat8";
 import Debug "mo:base/Debug";
 import Option "mo:base/Option";
+import Time "mo:base/Time";
+import Text "mo:base/Text";
 
+ 
 
 shared ({caller}) actor class FileStorage() = this {
 
@@ -21,12 +24,13 @@ shared ({caller}) actor class FileStorage() = this {
     type FileChunk = Types.FileChunk;
     type FileState = Types.FileState;
 
-    var IdGenFile = 0;
+    
+    var IdGenChunk = 0;
 
     let DATASTORE_CANISTER_CAPACITY : Nat = 2_000_000_000;
 
-    // Size limit of each note is 1 MB.
-    let FILE_DATA_SIZE = 1_000_000;
+    // Size limit of each note is 2 MB.
+    let FILE_DATA_SIZE = 2_000_000;
 
     var CHUNK_SIZE = 1_000_000; // 1 MB
 
@@ -34,227 +38,162 @@ shared ({caller}) actor class FileStorage() = this {
 
     var totalCanisterDataSize = 0;
 
+    var checkFileHash = false;
+
     // stable var _stableDatastores : [(Nat, FileTree)] = [];
     // let _datastores = HashMap.fromIter<Nat, FileTree>(_stableDatastores.vals(), 10, Nat.equal, Hash.hash);
     let _datastores : HashMap.HashMap<Nat, File> = HashMap.HashMap<Nat, File>(10, Nat.equal, Hash.hash);
 
-    let _chunkCache : HashMap.HashMap<Nat, [FileChunk]> = HashMap.HashMap<Nat, [FileChunk]>(10, Nat.equal, Hash.hash);
+    let _chunkCache : HashMap.HashMap<Nat, FileChunk> = HashMap.HashMap<Nat, FileChunk>(10, Nat.equal, Hash.hash);
 
-    // registry canister need call this func first before user upload file with file id
-    // file required hash md5
-    public shared ({caller}) func registerFile(file : File) : async File {
+    // EVENT BUS SECTION - Cross canister notify & handle event
+
+    private func _updateFileChunk(fileId : Nat, chunkInfo: Types.ChunkInfo) : async () {
+        switch (_datastores.get(fileId)) {
+            case(null) {}; // file not registered
+            case(?file) { 
+                // check hash md5 if hash not same when register -> error if has not equal
+                var buf = Buffer.fromArray<Types.ChunkInfo>(file.chunks);
+                buf.add(chunkInfo);
+                // else if hash equal
+                var state : Types.FileState = #empty;
+                if (buf.size() == file.totalChunk) {
+                    let map = HashMap.HashMap<Nat, Types.ChunkInfo>(0, Nat.equal, Hash.hash);
+                    // group all chunkid by canister id
+                    for (chunk in buf.vals()) {
+                        switch(map.get(chunk.chunkOrderId)) {
+                                case(?dupplicateChunk) { 
+                                    // process delete dupplicate chunk Id
+                                    let canister : Types.FileStorage = actor (chunk.canisterId);
+                                    await canister.deleteChunk(chunk.canisterChunkId);
+                                };
+                                case(null) { 
+                                    map.put(chunk.chunkOrderId, chunk);
+                                };
+                            };
+                    };
+                    
+                    buf.clear();
+                    buf := Buffer.fromIter<Types.ChunkInfo>(map.vals());
+
+                    if (map.size() == file.totalChunk) { // if collected enough chunks
+                        if (checkFileHash) {
+                            // join file - hash - compare hash
+                        };
+                        state := #ready;
+                        // notify 
+                        ignore notify(Principal.toText(_admin), (#UpdateFileState (file.rootId, file.id)));
+                    };
+                    
+                };
+                let ftmp = {
+                        rootId = file.rootId;
+                        id = file.id;
+                        name = file.name;
+                        hash = file.hash;
+                        chunks = Buffer.toArray(buf);
+                        totalChunk = file.totalChunk;
+                        state = state;
+                        owner = caller;
+                        size = file.size;
+                        lastTimeUpdate = Time.now();
+                };
+                _datastores.put(fileId, ftmp);
+            };
+        };
+    };
+
+    public shared ({caller}) func eventHandler(event : Types.Event) : async () {
+        switch(event) {
+            case(#StreamUpChunk (fileId, chunkInfo)) { 
+                await _updateFileChunk(fileId, chunkInfo);
+            };
+            case (_) {
+                // not process if receive
+                // counter number call
+            };
+        };
+    };
+
+    private func notify(canisterId : Text, e : Types.Event) : async () {
+        let registry : Types.EventBus = actor (canisterId);
+        ignore registry.eventHandler(e);
+    };
+    // FILE STORAGE SECTION : CRUD function
+
+    public shared ({caller}) func putFile(file : File) : async File {
         // only filetree-registry (proxy) can call
         assert(caller == _admin);
-        assert(file.fHash != null);
-
         // check storage available -> if not enough return fid = 0, file manager will create new storage canister
-        IdGenFile := IdGenFile + 1;
-        let ftmp : File = {
-                    fId = ?IdGenFile;
-                    fName = file.fName;
-                    fHash = file.fHash;
-                    fData = file.fData;
-                    fState = #empty;
-                    fOwner = file.fOwner;
+        // if (file.size > _remainMemory()) {
+        //     Debug.trap("You need add some cycle to canister registry: " # Principal.toText(_admin));
+        // };
+        _datastores.put(file.id, file);
+        return file;
+    };
+
+    public query ({caller}) func readFile(id : Nat) : async ?File {
+        assert(caller == _admin);
+        let storageFile = _datastores.get(id);
+        switch (storageFile) {
+            case null null;
+            case (f) f;
+        };
+    };
+
+    public shared ({caller}) func deleteFile(id : Nat) : async Result.Result<Nat, Text> {
+        assert(caller == _admin);
+        // delete all chunk
+        switch (_datastores.get(id)) {
+            case null {};
+            case (?file) {
+                for (chunk in file.chunks.vals()) {
+                    let canister : Types.FileStorage = actor (chunk.canisterId);
+                    await canister.deleteChunk(chunk.canisterChunkId);
                 };
-        _datastores.put(IdGenFile, ftmp);
-        return ftmp;
-    };
-
-    public shared ({caller}) func removeChunksCache(fId : Nat) : async () {
-        _chunkCache.delete(fId);
-    };
-
-    public shared ({caller}) func getChunksCache(fId : Nat) : async ?[FileChunk] {
-        _chunkCache.get(fId);
-    };
-
-    /**
-    *   Caching chunks and join chunks by file id & chunk id
-    */
-    private func _processChunk(fchunk : FileChunk) : FileState {
-        let fc = _chunkCache.get(fchunk.fId);
-        let arr = switch (fc) {
-            case null {
-                [];
-            };
-            case (?arr) {
-                arr;
             };
         };
+        _datastores.delete(id);
+        #ok id;
+    };
 
-        let buf = Buffer.fromArray<FileChunk>(arr);
-        buf.add(fchunk);
-        _chunkCache.put(fchunk.fId, Buffer.toArray(buf));
+    // CHUNK SECTION
 
-        if (fchunk.fTotalChunk == buf.size()) {
-            let map : HashMap.HashMap<Nat, [Nat8]> = HashMap.HashMap<Nat, [Nat8]>(1, Nat.equal, Hash.hash);
-            var bufSize = 0;
-            for (c in buf.vals()) {
-                map.put(c.fChunkId, c.fData);
-                bufSize += c.fData.size();
-            };
-            var i = 0;
-            let ret = Buffer.fromArray<Nat8>([]);
-            while (i < fchunk.fTotalChunk) {
-                let barr = switch (map.get(i)) {
-                    case null Debug.trap("Chunk not exist!");
-                    case (?b) b;
-                };
-                ret.append(Buffer.fromArray<Nat8>(barr));
-                i := i + 1;
-            };
-            // return
-            _chunkCache.delete(fchunk.fId);
-            let fileData = Buffer.toArray(ret);
-            // check file hash & put
-            totalCanisterDataSize := totalCanisterDataSize + fileData.size();
-            let result = _putFileData(fchunk.fId, fileData);
-            switch (result) {
-                case null Debug.trap("File not found!!! Need registered");
-                case (?id) {
-                    return #ready;
-                };
-            }
-        };
-        return #empty;
+    public shared ({caller}) func deleteChunk(chunkId : Nat) : async () {
+        _chunkCache.delete(chunkId);
     };
     
-    public shared ({caller}) func streamUpFile(fchunk : FileChunk) : async Result.Result<FileState, Text> {
-        let (fileOwner, fileRegistered) = _getPermission(caller, fchunk.fOwner, fchunk.fId);
-        switch(fileRegistered) {
-            case(null) { return #err "File is not registered!" };
-            case(?file) {
-                switch(fileOwner) {
-                    case null { return #err "You're not file owner!" };
-                    case (?owner) {
-                        //
-                        // if chunk == final -> check hash md5 -> return false if hash not same when register
-                        // check file status -> only process when state = #empty or #update
-                        if (file.fState == #empty) {
-                            let state = _processChunk(fchunk);
-                            return #ok state;
-                        };
-                        return #err "File has uploaded! Re-update file tree and change file status to #empty if you need re-upload file"
-                    };
-                };
-            };
-        };
-    };
+    public shared ({caller}) func streamUp(fileCanisterId : Text, fchunk : FileChunk) : async ?Nat {
+        // let (fileOwner, fileRegistered) = _getPermission(caller, fchunk.owner, fchunk.fileId);
+        assert(caller == _admin);
 
-    private func _getPermission(caller : Principal, fileOwner : Principal, fileId : Nat) : (?Principal, ?File) {
-        let storageFile = _datastores.get(fileId);
-        let fOwner = switch(storageFile) {
-            case(null) { null };
-            case(?file) {
-                let owner = if (caller == _admin) {
-                    fileOwner;
-                } else {
-                    caller;
-                };
-                if (file.fOwner != owner) {
-                     null;
-                } else {
-                    ?owner;
-                };
-            };
+        // does need verify file first ?
+        IdGenChunk := IdGenChunk + 1;
+
+        _chunkCache.put(IdGenChunk, fchunk);
+
+        let chunkInfo : Types.ChunkInfo = {
+            canisterChunkId = IdGenChunk;
+            canisterId = Principal.toText(Principal.fromActor(this));
+            chunkOrderId = fchunk.chunkOrderId;
         };
-        (fOwner, storageFile);
+
+        ignore notify(fileCanisterId, (#StreamUpChunk (fchunk.fileId, chunkInfo)));
+
+        (?IdGenChunk);
     };
 
     /**
     *   
     *   Chunk id default is 0
     */
-    public shared ({caller}) func streamDownFile(paramFileOwner : Principal, id : Nat, chunkId : Nat) : async Result.Result<FileChunk, Text> {
-        let (fileOwner, fileRegistered) = _getPermission(caller, paramFileOwner, id);
-        switch(fileRegistered) {
-            case(null) { return #err "File is not registered!" };
-            case(?file) {
-                switch(fileOwner) {
-                    case null { return #err "You're not file owner!" };
-                    case (?owner) {
-                        switch (file.fState) {
-                            case (#empty) return #err "File data is #empty";
-                            case (#ready) {
-                                let byteArr = Buffer.fromArray<Nat8>(Option.get<[Nat8]>(file.fData, []));
-                                let totalChunk = if (byteArr.size() % CHUNK_SIZE != 0) { (byteArr.size() / CHUNK_SIZE) + 1 } else { byteArr.size() / CHUNK_SIZE };
-                                if (chunkId < totalChunk) {
-                                    let start = chunkId * CHUNK_SIZE;
-                                    let length : Nat = if (start + CHUNK_SIZE <= byteArr.size()) CHUNK_SIZE else byteArr.size() - start;
-                                    let chunk = Buffer.subBuffer(byteArr, start, length);
-                                    return #ok {
-                                        fId = id;
-                                        fChunkId = chunkId;
-                                        fTotalChunk = totalChunk;
-                                        fData = Buffer.toArray(chunk);
-                                        fOwner = owner;
-                                    }
-                                } else {
-                                    // alway return chunk at index 0 if client dont know exactly chunkId
-                                    // the next round client will know total chunk + chunkid client need get to join full file
-                                    let length : Nat = if (CHUNK_SIZE > byteArr.size()) byteArr.size() else CHUNK_SIZE;
-                                    let chunk = Buffer.subBuffer(byteArr, 0, length);
-                                    return #ok {
-                                        fId = 0;
-                                        fChunkId = chunkId;
-                                        fTotalChunk = totalChunk;
-                                        fData = Buffer.toArray(chunk);
-                                        fOwner = owner;
-                                    }
-                                }
-                            };
-                        };
-                    };
-                };
-            };
-        };
-    };
+    public shared ({caller}) func streamDown(chunkId : Nat) : async ?FileChunk {
+        assert(caller == _admin);
 
-    private func _putFileData(id : Nat, data : [Nat8]) : ?Nat {
-        switch (_datastores.get(id)) {
-            case(null) return null; // file not registered
-            case(?file) { 
-                // check hash md5 if hash not same when register -> error if has not equal
-
-                // else if hash equal
-                let ftmp = {
-                    fId = file.fId;
-                    fName = file.fName;
-                    fHash = file.fHash;
-                    fData = ?data;
-                    fState = #ready;
-                    fOwner = file.fOwner;
-                };
-                _datastores.put(id, ftmp);
-            };
-        };
-        ?id;
-    };
-
-    public query ({caller}) func getFile(paramFileOwner : Principal, id : Nat) : async Result.Result<File, Text> {
-        let (fileOwner, fileRegistered) = _getPermission(caller, paramFileOwner, id);
-        switch (fileRegistered) {
-            case null #err "File not exist";
-            case (?f) #ok f;
-        };
-    };
-
-    public shared ({caller}) func deleteFile(fOwner : Principal, id : Nat) : async Result.Result<Nat, Text> {
-        let (fileOwner, fileRegistered) = _getPermission(caller, fOwner, id);
-        switch(fileRegistered) {
-            case(null) { return #err "File is not registered!" };
-            case(?file) {
-                switch(fileOwner) {
-                    case null { return #err "You're not file owner!" };
-                    case (?owner) {
-                        _datastores.delete(id);
-                        totalCanisterDataSize := totalCanisterDataSize - Option.get<[Nat8]>(file.fData, []).size();
-                        #ok(id);
-                    };
-                };
-            };
-        };
+        switch (_chunkCache.get(chunkId)) {
+            case null null;
+            case (chunk) chunk;
+        }
     };
 
     public shared(msg) func getCanisterId() : async Principal {
@@ -262,8 +201,12 @@ shared ({caller}) actor class FileStorage() = this {
         return canisterId;
     };
 
-    public func getCanisterMemoryAvailable() : async Nat {
+    private func _remainMemory() : Nat {
         return DATASTORE_CANISTER_CAPACITY - totalCanisterDataSize;
+    };
+
+    public func getCanisterMemoryAvailable() : async Nat {
+        _remainMemory();
     };
 
     public func getCanisterFilesAvailable() : async Nat {

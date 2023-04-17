@@ -3,14 +3,19 @@
   {#if inAction}
     <Column sm={1} md={2} lg={6}><InlineLoading /></Column>
   {:else}
-    <Column sm={1} md={2} lg={2} style="padding-top:33px;"><DeleteButton folder={fileTree} toogleInAction={toogleInAction} reload={reloadAction}/></Column>
+    <Column sm={1} md={2} lg={2} style="padding-top:33px;"><DeleteButton folder={fileTree} 
+                                                                          toogleInAction={toogleInAction} 
+                                                                          reload={reloadAction}/></Column>
     <Column sm={1} md={2} lg={2}><SyncButton folder={fileTree} 
                                               directoryHandle={directoryHandle} 
                                               toogleModal={toogleModal} 
                                               toogleInAction={toogleInAction} 
-                                              toogleEnableDownload={toogleEnableDownload}/></Column>
+                                              toogleEnableDownload={toogleEnableDownload}
+                                              fileMap={fileMap}/></Column>
     {#if enableDownload}
-      <Column sm={1} md={2} lg={2} style="padding-top:33px;"><DownloadButton folder={fileTree} toogleInAction={toogleInAction}/></Column>
+      <Column sm={1} md={2} lg={2} style="padding-top:33px;"><DownloadButton  folder={fileTree} 
+                                                                              toogleInAction={toogleInAction}
+                                                                              fileMap={fileMap}/></Column>
       {/if}
   {/if}
 </template>
@@ -26,9 +31,11 @@
   export let directoryHandle;
   export let toogleModal;
   export let reloadAction;
+  export let fileMap;
 
   let inAction = false;
   let enableDownload = false;
+  
 
   function toogleEnableDownload(mode, f) {
       fileTree = f;

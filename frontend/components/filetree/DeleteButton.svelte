@@ -16,11 +16,11 @@
   async function deleteFileTree() {
     toogleInAction(true);
     console.log("DELETE");
-    if (folder.fId && folder.fId.length > 0) {
-      let ret = await $fileTreeRegistry.deleteFileTree(folder.fId[0]);
+    if (folder.id > 0) {
+      let ret = await $fileTreeRegistry.deleteFileTree(folder.id);
       console.log(ret);
     } else {
-      console.log("File id not exist: " + folder.fId)
+      console.log("File id not exist: " + folder.id)
       // remove local
       $localFileTrees = [];
     }

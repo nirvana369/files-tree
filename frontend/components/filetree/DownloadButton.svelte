@@ -8,6 +8,7 @@
 
   export let folder;
   export let toogleInAction;
+  export let fileMap;
 
   async function download() {
     toogleInAction(true);
@@ -23,7 +24,7 @@
 
   async function createFile(fileHandle, content) {
     // convert [uint8] -> ArrayBuffer -> Blob
-    let blob = new Blob([new Uint8Array(content[0]).buffer]);
+    let blob = new Blob([new Uint8Array(content).buffer]);
     /**
      * Secure context : fileHandle.createWritable()
      * This feature is available only in secure contexts (HTTPS), in some or all supporting browsers.
@@ -36,14 +37,15 @@
   }
 
   async function createDirectory(dirEntry, fileTree) {
-    const curDir = await dirEntry.getDirectoryHandle(fileTree.fName, { create: true });
-    for (const child of fileTree.children[0]) {
+    const curDir = await dirEntry.getDirectoryHandle(fileTree.name, { create: true });
+    for (const child of fileTree.children) {
         if (getIsFolder(child.fType)) {
            createDirectory(curDir, child);
         } else {
-          if (child.fData && child.fData.length > 0) {
-            let curFile = await curDir.getFileHandle(child.fName, { create: true });
-            createFile(curFile, child.fData);
+          const data = fileMap[child.hash];
+          if (data && data.length > 0) {
+            let curFile = await curDir.getFileHandle(child.name, { create: true });
+            createFile(curFile, data);
           } else {
             alert("You need sync first!");
           }

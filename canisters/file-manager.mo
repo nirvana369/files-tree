@@ -22,37 +22,56 @@ module {
 
     // };
 
-    private func _iter(path : Text, fileTree : Types.MutableFileTree, f : (Text, Types.MutableFileTree) -> ()) {
+    private func _asyncIter(level : Nat, path : Text, fileTree : Types.MutableFileTree, f : (Text, Types.MutableFileTree) -> async ()) : async () {
         switch (fileTree.fType) {
             case (#file) {
-                f(path # "/" # fileTree.fName, fileTree);
+                await f(path # "/" # fileTree.name, fileTree);
             };
             case (#directory) {
-                f(path # "/" # fileTree.fName, fileTree);
-                switch (fileTree.children) {
-                    case null {
-                        // do nothing
-                    };
-                    case (?childs) {
-                        for (child in childs.vals()) {
-                            _iter(path # "/" # fileTree.fName, child, f);
+                await f(path # "/" # fileTree.name, fileTree);
+                if (fileTree.children.size() > 0) {
+                    for (child in fileTree.children.vals()) {
+                            await _asyncIter(level + 1, path # "/" # fileTree.name, child, f);
                         };
-                    };
+                };
+            };
+        };
+    };
+
+    private func _iter(level : Nat, path : Text, fileTree : Types.MutableFileTree, f : (Text, Types.MutableFileTree) -> ()) {
+        switch (fileTree.fType) {
+            case (#file) {
+                f(path # "/" # fileTree.name, fileTree);
+            };
+            case (#directory) {
+                f(path # "/" # fileTree.name, fileTree);
+                if (fileTree.children.size() > 0) {
+                    for (child in fileTree.children.vals()) {
+                            _iter(level + 1, path # "/" # fileTree.name, child, f);
+                        };
                 };
             };
         };
     };
 
     private func _iterFiles(fileTree : Types.MutableFileTree, f : (Types.MutableFileTree) -> ()) {
-        _iter("", fileTree, func (p, x) {
+        _iter(0, "", fileTree, func (p, x) {
             if (x.fType == #file) {
                 f(x);
             };
         });
     };
 
+    private func _asyncIterFiles(fileTree : Types.MutableFileTree, f : (Types.MutableFileTree) -> async ()) : async () {
+        await _asyncIter(0, "", fileTree, func (p : Text, x : Types.MutableFileTree) : async () {
+            if (x.fType == #file) {
+                await f(x);
+            };
+        });
+    };
+
     private func _iterDirs(fileTree : Types.MutableFileTree, f : (Types.MutableFileTree) -> ()) {
-        _iter("", fileTree, func (p, x) {
+        _iter(0, "", fileTree, func (p, x) {
             if (x.fType == #directory) {
                 f(x);
             };
@@ -76,23 +95,17 @@ module {
         };
 
         private func _verify(f : Types.MutableFileTree) : Bool {
-            let children = switch (f.children) {
-                case null [];
-                case (?c) {
-                    c;
-                };
-            };
-            let buf = Buffer.fromArray<Types.MutableFileTree>(children);
+            let buf = Buffer.fromArray<Types.MutableFileTree>(f.children);
             for (i in Iter.range(0, buf.size() - 2)) {
                 for (j in Iter.range(i + 1, buf.size() - 1)) {
                     let f1 = buf.get(i);
                     let f2 = buf.get(j);
-                    if (f1.fType == f2.fType and f1.fName == f2.fName) {
+                    if (f1.fType == f2.fType and f1.name == f2.name) {
                         return false;
                     }
                 };
             };
-            for (c in children.vals()) {
+            for (c in f.children.vals()) {
                 if (not _verify(c)) {
                     return false;
                 };
@@ -108,7 +121,7 @@ module {
             for(k in keys) {
                 nodes.delete(k);
             };
-            _iter("", root, func (path, x) {
+            _iter(0, "", root, func (path, x) {
                 id += 1;
                 let node : Node = {
                     var id = id;
@@ -189,28 +202,24 @@ module {
                             };
                             nodeAParent.children := Buffer.toArray(bufChild);
                             // file tree remove child
-                            switch (nodeAParent.filePointer.children) {
-                                case null {};
-                                case (?children) {
-                                    let bufChildFileTree = Buffer.fromArray<Types.MutableFileTree>(children);
-                                    let x = Buffer.indexOf<Types.MutableFileTree>(nodeA.filePointer, bufChildFileTree, func (x, y) : Bool {
-                                            if (x.fId != y.fId) return false;
-                                            if (x.fType != y.fType) return false;
-                                            if (x.fName != y.fName) return false;
-                                            if (x.fHash != y.fHash) return false;
-                                            if (x.fCanister != y.fCanister) return false;
-                                            if (x.fState != y.fState) return false;
-                                            return true;
-                                    });
-                                    switch (x) {
-                                        case null { Debug.trap("Node A id is not child of B") };
-                                        case (?id) {
-                                            let x = bufChildFileTree.remove(id);
-                                        };
-                                    };
-                                    nodeAParent.filePointer.children := ?Buffer.toArray(bufChildFileTree);
+                            let bufChildFileTree = Buffer.fromArray<Types.MutableFileTree>(nodeAParent.filePointer.children);
+                            let x = Buffer.indexOf<Types.MutableFileTree>(nodeA.filePointer, bufChildFileTree, func (treeX, treeY) : Bool {
+                                    if (treeX.id != treeY.id) return false;
+                                    if (treeX.fType != treeY.fType) return false;
+                                    if (treeX.name != treeY.name) return false;
+                                    if (treeX.hash != treeY.hash) return false;
+                                    if (treeX.canisterId != treeY.canisterId) return false;
+                                    if (treeX.state != treeY.state) return false;
+                                    return true;
+                            });
+                            switch (x) {
+                                case null { Debug.trap("Node A id is not child of B") };
+                                case (?id) {
+                                    let x = bufChildFileTree.remove(id);
                                 };
                             };
+                            nodeAParent.filePointer.children := Buffer.toArray(bufChildFileTree);
+                               
                             
                         };
                     };
@@ -222,16 +231,9 @@ module {
                     let buf = Buffer.fromArray<Nat>(nodeB.children);
                     buf.add(nodeA.id);
                     // add B file tree state -> add A child
-                    let bufChildFileTree = switch (nodeB.filePointer.children) {
-                        case null {
-                            Buffer.Buffer<Types.MutableFileTree>(1);
-                        };
-                        case (?children) {
-                            Buffer.fromArray<Types.MutableFileTree>(children);
-                        };
-                    };
+                    let bufChildFileTree = Buffer.fromArray<Types.MutableFileTree>(nodeB.filePointer.children);
                     bufChildFileTree.add(nodeA.filePointer);
-                    nodeB.filePointer.children := ?Buffer.toArray(bufChildFileTree);
+                    nodeB.filePointer.children := Buffer.toArray(bufChildFileTree);
                 };
             };
         };
@@ -241,11 +243,32 @@ module {
         };
 
         public func setRootId(fId : Nat) {
-            root.fId := ?fId;
+            root.id := fId;
         };
 
         public func iterFiles(f : (Types.MutableFileTree) -> ()) {
             _iterFiles(root, f);
+        };
+
+        public func asyncIterFiles(f : (Types.MutableFileTree) -> async ()) : async () {
+            await _asyncIterFiles(root, f);
+            // _asyncIterFiles
+        };
+
+        public func getListFile() : [Types.MutableFileTree] {
+            let buf = Buffer.Buffer<Types.MutableFileTree>(1);
+            _iterFiles(root, func (f) {
+                buf.add(f);
+            });
+            Buffer.toArray(buf);
+        };
+
+        public func getListFileFreeze() : [Types.FileTree] {
+            let buf = Buffer.Buffer<Types.FileTree>(1);
+            _iterFiles(root, func (f) {
+                buf.add(_convert2FileTree(f));
+            });
+            Buffer.toArray(buf);
         };
 
         public func nodeInfo() : [{
@@ -279,44 +302,34 @@ module {
         };
 
         public func findByName(name : Text, f : (Types.MutableFileTree) -> ()) {
-            _iter("", root, func (path, x) {
-                if (name == x.fName) {
-                    f(x);
+            _iter(0, "", root, func (path, tree) {
+                if (name == tree.name) {
+                    f(tree);
                 }
             });
         };
 
         public func findByHash(hash : Text, f : (Types.MutableFileTree) -> ()) {
-            _iter("", root, func (p, x) {
-                switch (x.fHash) {
-                    case (?h) {
-                        if (h == hash) {
-                            f(x);
-                        };
-                    };
-                    case null {};
+            _iter(0, "", root, func (p, tree) {
+                if (tree.hash == hash) {
+                    f(tree);
                 };
             });
         };
 
         public func findById(id : Nat, f : (Types.MutableFileTree) -> ()) {
-            _iter("", root, func (p, x) {
-                switch (x.fId) {
-                    case (?fid) {
-                        if (fid == id) {
-                            f(x);
-                        };
-                    };
-                    case null {};
+            _iter(0, "", root, func (p, tree) {
+                if (tree.id == id) {
+                    f(tree);
                 };
             });
         };
 
         // File path : format /root/a/b/c/d.jpg
         public func findByPath(path : Text, f : (Types.MutableFileTree) -> ()) {
-            _iter("", root, func (p, x) {
+            _iter(0, "", root, func (p, tree) {
                 if (path == p) {
-                    f(x);
+                    f(tree);
                 };
             });
         };
@@ -331,43 +344,35 @@ module {
     };
 
     public func _convert2MutableFileTree(fileTree : Types.FileTree) : Types.MutableFileTree {
-        let c = switch (fileTree.children) {
-            case null null;
-            case (?childs) {
-                ?Array.map<Types.FileTree, Types.MutableFileTree>(childs, func (c) {
+        let mut : Types.MutableFileTree = {
+            var id = fileTree.id;
+            var fType = fileTree.fType;
+            var name = fileTree.name;
+            var canisterId = fileTree.canisterId;
+            var hash = fileTree.hash;
+            var state = fileTree.state;
+            var size = fileTree.size;
+            var totalChunk = fileTree.totalChunk;
+            var children = Array.map<Types.FileTree, Types.MutableFileTree>(fileTree.children, func (c) {
                     _convert2MutableFileTree(c);
                 });
-            };
-        };
-        let mut : Types.MutableFileTree = {
-            var fId = fileTree.fId;
-            var fType = fileTree.fType;
-            var fName = fileTree.fName;
-            var fCanister = fileTree.fCanister;
-            var fHash = fileTree.fHash;
-            var fState = fileTree.fState;
-            var children = c;
         };
         return mut;
     };
 
     public func _convert2FileTree(fileTree : Types.MutableFileTree) : Types.FileTree {
-        let c = switch (fileTree.children) {
-            case null null;
-            case (?childs) {
-                ?Array.map<Types.MutableFileTree, Types.FileTree>(childs, func (c) {
+        let mut : Types.FileTree = {
+            id = fileTree.id;
+            fType = fileTree.fType;
+            name = fileTree.name;
+            canisterId = fileTree.canisterId;
+            hash = fileTree.hash;
+            state = fileTree.state;
+            size = fileTree.size;
+            totalChunk = fileTree.totalChunk;
+            children = Array.map<Types.MutableFileTree, Types.FileTree>(fileTree.children, func (c) {
                     _convert2FileTree(c);
                 });
-            };
-        };
-        let mut : Types.FileTree = {
-            fId = fileTree.fId;
-            fType = fileTree.fType;
-            fName = fileTree.fName;
-            fCanister = fileTree.fCanister;
-            fHash = fileTree.fHash;
-            fState = fileTree.fState;
-            children = c;
         };
         return mut;
     };

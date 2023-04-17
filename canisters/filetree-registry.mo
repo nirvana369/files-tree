@@ -19,6 +19,7 @@ import Option "mo:base/Option";
 import Blob "mo:base/Blob";
 import Char "mo:base/Char";
 import Text "mo:base/Text";
+import Time "mo:base/Time";
 
 
 shared ({caller}) actor class FileRegistry() = this {
@@ -42,6 +43,7 @@ shared ({caller}) actor class FileRegistry() = this {
     let _numberOfDataPerCanister : Nat = DATASTORE_CANISTER_CAPACITY / FILE_DATA_SIZE;
 
     var IdGen : Nat = 0;
+    var IdGenFile = 0;
 
     stable var UserIdGen : Nat = 0;
 
@@ -57,6 +59,25 @@ shared ({caller}) actor class FileRegistry() = this {
     let _fileTreeStorage : HashMap.HashMap<Nat, Types.FileTree> = HashMap.fromIter<Nat, Types.FileTree>(_stableFileTreeStorage.vals(), 10, Nat.equal, Hash.hash);
     let _fileTreeRegistry : HashMap.HashMap<Principal, [Nat]> = HashMap.fromIter<Principal, [Nat]>(_stableFileTreeRegistry.vals(), 10, Principal.equal, Principal.hash);
 
+
+    public func grantCanisterStorageCallPermission() {
+
+    };
+
+    public shared ({caller}) func eventHandler(event : Types.Event) : async () {
+        switch(event) {
+            case(#UpdateFileState (fileTreeId, fileId)) {
+                _updateFileState(fileTreeId, fileId, #ready);
+            };
+            case (_) { };
+        };
+    };
+
+    private func _createFileId() : Nat {
+        IdGenFile := IdGenFile + 1;
+        IdGenFile;
+    };
+
     public shared ({caller}) func verifyFileTree(fileTree : Types.FileTree) : async Types.FileTree {
         // get list file tree of caller
 
@@ -68,28 +89,47 @@ shared ({caller}) actor class FileRegistry() = this {
 
     public shared ({caller}) func createFileTree(fileTree : Types.FileTree) : async Result.Result<Types.FileTree, Text> {
         let fileManager = FileManager.FileTree(fileTree);
-        let files  = Buffer.Buffer<Types.MutableFileTree>(1);
-        fileManager.iterFiles(func (x) {
-            files.add(x);
-        });
-
-        for (f in files.vals()) {
+        let files  = fileManager.getListFile();
+        IdGen := IdGen + 1;
+        await fileManager.asyncIterFiles(func (f : Types.MutableFileTree) : async () {
             let file : Types.File = {
-                            fId = f.fId;
-                            fName = f.fName;
-                            fHash = f.fHash;
-                            fData = null;
-                            fState = #empty;
-                            fOwner = caller;
-                        };
+                        rootId = IdGen;
+                        id = _createFileId();
+                        name = f.name;
+                        hash = f.hash;
+                        chunks = [];
+                        totalChunk = f.totalChunk;
+                        state = #empty;
+                        owner = caller;
+                        size = f.size;
+                        lastTimeUpdate = Time.now();
+                    };
             let (storageCanisterId, registeredFile) = await _registerFile(file);
-            f.fId := registeredFile.fId;
-            f.fCanister := ?Principal.toText(storageCanisterId);
-            f.fState := registeredFile.fState;
-        };
+            f.id := registeredFile.id;
+            f.canisterId := Principal.toText(storageCanisterId);
+            f.state := registeredFile.state;
+        });
+        // for (f in files.vals()) {
+        //     let file : Types.File = {
+        //                 rootId = IdGen;
+        //                 id = _createFileId();
+        //                 name = f.name;
+        //                 hash = f.hash;
+        //                 chunks = [];
+        //                 totalChunk = f.totalChunk;
+        //                 state = #empty;
+        //                 owner = caller;
+        //                 size = f.size;
+        //                 lastTimeUpdate = Time.now();
+        //             };
+        //     let (storageCanisterId, registeredFile) = await _registerFile(file);
+        //     f.id := registeredFile.id;
+        //     f.canisterId := Principal.toText(storageCanisterId);
+        //     f.state := registeredFile.state;
+        // };
         
         // update FileTree -> file will have canister id + id
-        IdGen := IdGen + 1;
+        
         fileManager.setRootId(IdGen);
         let imutableFileTree = fileManager.freeze();
         // return result for client -> client call canister file storage by canister id + id file to upload direct
@@ -99,53 +139,69 @@ shared ({caller}) actor class FileRegistry() = this {
         #ok(imutableFileTree);
     };
 
+    private func _validate(f : Types.MutableFileTree) {
+        if (f.hash == "") Debug.trap("Give me file hash to register file: " # f.name);
+        if (f.size == 0) Debug.trap("Give me file size to register file: " # f.name);
+        if (f.totalChunk == 0) Debug.trap("Give me file totalChunk to register file: " # f.name);
+        if (f.name == "") Debug.trap("Give me file name to register file: " # f.name);
+    };
+
+    private func _verifyOwner(caller : Principal, id : Nat) : ?Types.FileTree {
+        switch(_fileTreeRegistry.get(caller)) {
+            case(?listId) {
+                switch (Array.find<Nat>(listId, func x = x == id)) {
+                    case null null;
+                    case (?id) _fileTreeStorage.get(id);
+                };
+            };
+            case(null) { null};
+        };
+    };
+
     public shared ({caller}) func updateFileTree(fileTree : Types.FileTree) : async Result.Result<Types.FileTree, Text> {
         // read file tree 
-        let fTreeId = switch (fileTree.fId) {
-            case null return #err "File tree not registered!";
-            case (?id) {
-                id;
+        let fTree = switch (_verifyOwner(caller, fileTree.id)) {
+            case null return #err "File tree id is empty!";
+            case (?tree) {
+                tree;
             };
         };
+        let fTreeId = fTree.id;
         let fileManager = FileManager.FileTree(fileTree);
-        let files  = Buffer.Buffer<Types.MutableFileTree>(1);
-        fileManager.iterFiles(func (x) {
-            files.add(x);
-        });
-
+        let files  = fileManager.getListFile();
+      
         for (f in files.vals()) {
-            switch(f.fId) {
-                case (null) {  
-                    let file : Types.File = {
-                        fId = f.fId;
-                        fName = f.fName;
-                        fHash = f.fHash;
-                        fData = null;
-                        fState = #empty;
-                        fOwner = caller;
+            _validate(f);
+            if (f.id <= 0) {
+                let file : Types.File = {
+                        rootId = fTreeId;
+                        id = _createFileId();
+                        name = f.name;
+                        hash = f.hash;
+                        chunks = [];
+                        totalChunk = f.totalChunk;
+                        state = #empty;
+                        owner = caller;
+                        size = f.size;
+                        lastTimeUpdate = Time.now();
                     };
                     let (storageCanisterId, registeredFile) = await _registerFile(file);
-                    f.fId := registeredFile.fId;
-                    f.fCanister := ?Principal.toText(storageCanisterId);
-                    f.fState := registeredFile.fState;
-                };
-                case (?fileId) { 
-                    // verify file
-                    switch (f.fCanister) {
-                        case null {
-                            // has file id but canister not exist ??
+                    f.id := registeredFile.id;
+                    f.canisterId := Principal.toText(storageCanisterId);
+                    f.state := registeredFile.state;
+            } else {
+                if (f.canisterId == "") {
+                    return #err ("Where is my file ? #id: " # Nat.toText(f.id));
+                } else {
+                    let storageCanister : Types.FileStorage = actor(f.canisterId);
+                    let ret = await storageCanister.readFile(f.id);
+                    switch (ret) {
+                        case (?state) {
+                            f.state := state.state;
                         };
-                        case (?canisterId) {
-                            let storageCanister : Types.FileStorage = actor(canisterId);
-                            let ret = await storageCanister.getFile(caller, fileId);
-                            switch (ret) {
-                                case (#ok(file)) {
-                                    f.fState := file.fState;
-                                };
-                                case (#err(e)) {
-                                    // file not exist -> wrong file id 
-                                };
-                            };
+                        case (null) {
+                            // file not exist -> wrong file id 
+                            return #err ("file not exist -> wrong file id: " # Nat.toText(f.id));
                         };
                     };
                 };
@@ -160,31 +216,23 @@ shared ({caller}) actor class FileRegistry() = this {
 
 
     public shared ({caller}) func deleteFileTree(id : Nat) : async Result.Result<Nat, Text> {
+        let fTreeId = switch (_verifyOwner(caller, id)) {
+            case null return #err "File tree id is empty!";
+            case (?id) {
+                id;
+            };
+        };
         switch (_getFileTree(id)) {
             case null #err "File tree are not exist!";
             case (?fTree) {
                 let fileManager = FileManager.FileTree(fTree);
-                let files  = Buffer.Buffer<Types.MutableFileTree>(1);
-                fileManager.iterFiles(func (x) {
-                    files.add(x);
-                });
+                let files  = fileManager.getListFile();
 
                 for (f in files.vals()) {
-                    switch(f.fId) {
-                        case (null) { };
-                        case (?fileId) { 
-                            // verify file
-                            switch (f.fCanister) {
-                                case null {
-                                    // has file id but canister not exist ??
-                                };
-                                case (?canisterId) {
-                                    let storageCanister : Types.FileStorage = actor(canisterId);
-                                    let ret = await storageCanister.deleteFile(caller, fileId);
-                                };
-                            };
-                        };
-                    };
+                    if (f.canisterId != "" and f.id > 0) {
+                        let storageCanister : Types.FileStorage = actor(f.canisterId);
+                        let ret = await storageCanister.deleteFile(f.id);
+                    }
                 };
 
                 _fileTreeStorage.delete(id);
@@ -234,12 +282,12 @@ shared ({caller}) actor class FileRegistry() = this {
         List.toArray(_datastoreCanisterIds);
     };
 
-    private func _removeRegistry(owner : Principal, fId : Nat) {
+    private func _removeRegistry(owner : Principal, id : Nat) {
         switch (_fileTreeRegistry.get(owner)) {
             case null {};
             case (?arr) {
                 let buf = Buffer.fromArray<Nat>(arr);
-                switch (Buffer.indexOf<Nat>(fId, buf, Nat.equal)) {
+                switch (Buffer.indexOf<Nat>(id, buf, Nat.equal)) {
                     case null { };
                     case (?id) {
                         let x = buf.remove(id);
@@ -250,52 +298,127 @@ shared ({caller}) actor class FileRegistry() = this {
         };
     };
 
-    public shared ({caller}) func removeChunksCache(canisterId : Text, fId : Nat) : async () {
-        let canister : Types.FileStorage = actor(canisterId);
-        await canister.removeChunksCache(fId);
+    public shared ({caller}) func removeChunksCache(canisterId : Text, id : Nat) : async () {
+        // let canister : Types.FileStorage = actor(canisterId);
+        // await canister.removeChunksCache(id);
     };
 
-    public shared ({caller}) func streamUpFile(fileTreeId : Nat, canisterId : Text, fchunk : Types.FileChunk) : async Result.Result<Types.FileState, Text> {
-        let canister : Types.FileStorage = actor(canisterId);
-        let chunk = {
-                        fId = fchunk.fId;
-                        fChunkId = fchunk.fChunkId;
-                        fTotalChunk = fchunk.fTotalChunk;
-                        fData = fchunk.fData;
-                        fOwner = caller;
-                    };
-        let ret = await canister.streamUpFile(chunk);
-        switch (ret) {
-            case (#ok(state)) {
-                if (state == #ready) {
-                    _updateFileState(fileTreeId, fchunk.fId, state);
-                };
-            };
-            case (_) {};
+    public shared ({caller}) func streamUpFile(fileTreeId : Nat, fileId : Nat, fchunk : Types.FileChunk) : async Result.Result<Nat, Text> {
+        
+        let fileTree = switch (_verifyOwner(caller, fileTreeId)) {
+            case null return #err "File not exist";
+            case (?ft) ft;
         };
-        return ret;
+        let fileManager = FileManager.FileTree(fileTree);
+        var fileFound : ?Types.MutableFileTree = null;
+        fileManager.findById(fileId, func (x) {
+            if (x.fType == #file) {
+                fileFound := ?x;
+            };
+        });
+        let f = switch(fileFound) {
+            case null return #err ("File " # Nat.toText(fileId) # " not found");  
+            //
+            case (?file) {
+                file;
+            };
+        };
+
+        if (f.canisterId == "") {
+            return #err ("File " # Nat.toText(fileId) # " canister not found");
+        };
+        let (storageCanisterId, storageCanister) = await _getCurrentDataStorage();
+        let ret = await storageCanister.streamUp(f.canisterId, fchunk);
+        switch(ret) {
+            case null #err "Stream up chunk data failed";
+            case (?canisterChunkId) #ok canisterChunkId;
+        };
     };
 
-    private func _updateFileState(fId : Nat, fileId : Nat, state : Types.FileState) {
-        let fileTree = _getFileTree(fId);
+    private func _updateFileState(id : Nat, fileId : Nat, state : Types.FileState) {
+        let fileTree = _getFileTree(id);
         switch (fileTree) {
             case null {};
             case (?ft) {
                 let fileManager = FileManager.FileTree(ft);
                 fileManager.findById(fileId, func (x) {
                     if (x.fType == #file) {
-                        x.fState := state;
+                        x.state := state;
                     };
                 });
                 let imutableFileTree = fileManager.freeze();
-                _putFileTree(fId, imutableFileTree);
+                _putFileTree(id, imutableFileTree);
             };
         };
     };
+
+    private func _getFile(fileTree : Types.FileTree, fileId : Nat) : async ?Types.File {
+         let fileManager = FileManager.FileTree(fileTree);
+        var fileFound : ?Types.MutableFileTree = null;
+        fileManager.findById(fileId, func (x) {
+            if (x.fType == #file) {
+                fileFound := ?x;
+            };
+        });
+        let f = switch(fileFound) {
+            case null return null;
+            //
+            case (?file) {
+                file;
+            };
+        };
+
+        let canister : Types.FileStorage = actor (f.canisterId);
+        let fileInfo = await canister.readFile(fileId);
+        fileInfo;
+    };
     
-    public shared ({caller}) func streamDownFile(canisterId : Text, id : Nat, chunkId : Nat) : async Result.Result<Types.FileChunk,Text> {
-        let canister : Types.FileStorage = actor(canisterId);
-        await canister.streamDownFile(caller, id, chunkId);
+    public shared ({caller}) func streamDownFile(fileTreeId : Nat, fileId : Nat, chunkId : Nat) : async Result.Result<Types.FileChunk,Text> {
+        let fileTree = switch (_verifyOwner(caller, fileTreeId)) {
+            case null return #err "File not exist";
+            case (?ft) ft;
+        };
+        let fileManager = FileManager.FileTree(fileTree);
+        var fileFound : ?Types.MutableFileTree = null;
+        fileManager.findById(fileId, func (x) {
+            if (x.fType == #file) {
+                fileFound := ?x;
+            };
+        });
+        let f = switch(fileFound) {
+            case null return #err ("File " # Nat.toText(fileId) # " not found");  
+            //
+            case (?file) {
+                file;
+            };
+        };
+
+        if (f.canisterId == "") {
+             return #err ("File " # Nat.toText(fileId) # " canister not found");
+        };
+
+        let canister : Types.FileStorage = actor (f.canisterId);
+        let fileInfo = await canister.readFile(fileId);
+
+        switch(fileInfo) {
+            case(?f) {  
+                let chunkInfo = Array.find<Types.ChunkInfo>(f.chunks, func c = c.chunkOrderId == chunkId);
+                switch(chunkInfo) {
+                    case(?info) {  
+                        let chunkCanister : Types.FileStorage = actor (info.canisterId);
+                        let chunk = await canister.streamDown(info.canisterChunkId);
+                        switch(chunk) {
+                            case(?value) { #ok value };
+                            case(null) { return #err ("Chunk not exist: " # Nat.toText(chunkId))};
+                        };
+                    };
+                    case(null) { 
+                        return #err ("Chunk not found: TreeId=" # Nat.toText(fileTreeId) # "" # Nat.toText(fileId) # "" # Nat.toText(chunkId));
+                    };
+                };
+            };
+            case(null) { return #err ("File " # Nat.toText(fileId) # " metadata not found") };
+        };
     };
 
     // internal func
@@ -340,8 +463,7 @@ shared ({caller}) actor class FileRegistry() = this {
         }
     };
 
-
-    private func _registerFile(file : Types.File) : async (Principal, Types.File) {
+    private func _getCurrentDataStorage() : async (Principal, Types.FileStorage) {
         let storageCanisterId = switch (_currentDatastoreCanisterId) {
                                                 case null {
                                                     // find in list ?
@@ -358,11 +480,16 @@ shared ({caller}) actor class FileRegistry() = this {
                                                     canister;
                                                 };
                                                 case (?id) {
-                                                id;
+                                                    id;
                                                 };
                                             };
         let storageCanister : Types.FileStorage = actor(Principal.toText(storageCanisterId));
-        let registeredFile = await storageCanister.registerFile(file);
+        (storageCanisterId, storageCanister);
+    };
+
+    private func _registerFile(file : Types.File) : async (Principal, Types.File) {
+        let (storageCanisterId, storageCanister) = await _getCurrentDataStorage();
+        let registeredFile = await storageCanister.putFile(file);
         (storageCanisterId, registeredFile);
     };
     

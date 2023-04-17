@@ -2,28 +2,32 @@ import md5 from 'md5';
   
   function mergeFile(fileA, fileB) {
       let ret = {
-        fId : fileA.fId && fileA.fId.length > 0 ? fileA.fId : fileB.fId,
-        fName : fileA.fName,
+        id : fileA.id > 0 ? fileA.id : fileB.id,
+        name : fileA.name,
         fType : fileA.fType,
-        fCanister : fileA.fCanister.length > 0 ? fileA.fCanister : fileB.fCanister,
-        fHash : fileA.fHash.length > 0 ? fileA.fHash : fileB.fHash,
-        fData : fileA.fData && fileA.fData.length > 0 ? fileA.fData : fileB.fData && fileB.fData.length > 0 ? fileB.fData : [],
-        fState : fileA.fState.hasOwnProperty('ready') ? fileA.fState : fileB.fState,
-        children : fileA.children.length > 0 ? fileA.children : fileB.children,
+        canisterId : fileA.canisterId != "" ? fileA.canisterId : fileB.canisterId,
+        hash : fileA.hash != "" ? fileA.hash : fileB.hash,
+        data : fileA.data && fileA.data.length > 0 ? fileA.data : (fileB.data && fileB.data.length > 0 ? fileB.data : []),
+        state : fileA.state.hasOwnProperty('ready') ? fileA.state : fileB.state,
+        size : fileA.size > 0 ? fileA.size : fileB.size,
+        totalChunk : fileA.totalChunk > 0 ? fileA.totalChunk : fileB.totalChunk,
+        children : [],
       }; 
       return ret;
   }
 
   function mergeFolder(folderA, folderB) {
     let ret = {
-      fId : folderA.fId.length > 0 ? folderA.fId : folderB.fId,
-      fName : folderA.fName,
+      id : folderA.id > 0 ? folderA.id : folderB.id,
+      name : folderA.name,
       fType : {directory : null},
-      fCanister : folderA.fCanister.length > 0 ? folderA.fCanister : folderB.fCanister,
-      fHash : folderA.fHash.length > 0 ? folderA.fHash : folderB.fHash,
-      fData : folderA.fData,
-      fState : folderA.fState,
-      children : folderA.children.length > 0 ? folderA.children : folderB.children,
+      canisterId : folderA.canisterId != "" ? folderA.canisterId : folderB.canisterId,
+      hash : folderA.hash != "" ? folderA.hash : folderB.hash,
+      data : folderA.data,
+      state : folderA.state,
+      size : folderA.size > 0 ? folderA.size : folderB.size,
+      totalChunk : folderA.totalChunk > 0 ? folderA.totalChunk : folderB.totalChunk,
+      children : [] // combine logic at mergeFileTree(a, b)
     }; 
     return ret;
 }
@@ -32,18 +36,18 @@ import md5 from 'md5';
       let ret = mergeFolder(leafA, leafB); // or leafB
       let children = [];
       let markB = {};
-      for(const i of leafA.children[0]) {
+      for(const i of leafA.children) {
         let isSame = false;
-          for(const j of leafB.children[0]) {
-              if (markB[j.fName] != true && i.fName === j.fName) {
+          for(const j of leafB.children) {
+              if (markB[j.name] != true && i.name === j.name) {
                 if (getIsFolder(i.fType) && getIsFolder(j.fType)) {
                     isSame = true;
-                    markB[j.fName] = true;
+                    markB[j.name] = true;
                     let c = mergeFileTree(i, j);
                     children.push(c);
                 } else if (!getIsFolder(i.fType) && !getIsFolder(j.fType)) {
                     isSame = true;
-                    markB[j.fName] = true;
+                    markB[j.name] = true;
                     children.push(mergeFile(i, j));
                 }
               }
@@ -52,12 +56,12 @@ import md5 from 'md5';
             children.push(i);
           }
       }
-      for(const j of leafB.children[0]) {
-          if (markB[j.fName] != true) {
+      for(const j of leafB.children) {
+          if (markB[j.name] != true) {
             children.push(j);
           }
       }
-      ret.children = [children];
+      ret.children = children;
       return ret;
   }
 
@@ -69,7 +73,7 @@ import md5 from 'md5';
   function recursiveCollectFileData(fileTree) {
       if (getIsFolder(fileTree.fType)) {
           let ret = []; 
-          for (const child of fileTree.children[0]) {
+          for (const child of fileTree.children) {
               let f = recursiveCollectFileData(child);
               ret = [...ret,...f];
           }
@@ -83,54 +87,51 @@ import md5 from 'md5';
       let entries = await dirHandle.entries();
       let entry = await entries.next();
       let ret = {
-            fId : [],
-            fName : dirHandle.name,
+            id : 0,
+            name : dirHandle.name,
             fType : {directory : null},
-            fCanister : [],
-            fHash : [],
-            fData : [],
-            fState : {empty : null},
-            children : [[]]
+            canisterId : "",
+            hash : "",
+            data : [],
+            state : {empty : null},
+            size : 0,
+            totalChunk : 0,
+            children : []
           }; 
       while (entry.value) {
         let obj = entry.value[1];
         if (obj.kind == "directory") {
           let sub = await traverseDirectory(obj, callback);
-          ret.children[0].push(sub);
+          ret.children.push(sub);
         } else if (obj.kind == "file") {
           const fileHandle = await obj.getFile();
           const file = await fileHandle.arrayBuffer();
-          // callback(obj.name, file);
+          
           var ia = new Uint8Array(file);  // ArrayBuffer -> Uint8Array
           var nat8Arr = Array.from(ia)    // Uint8Array -> [Nat8]
           let hash = md5(nat8Arr);
           // console.log(new Uint8Array(nat8Arr[0]).buffer);  // convert [Nat8] -> to file
+          const chunkLength = 1000000;
+          callback(obj.name, hash, nat8Arr);
           let f = {
-            fId : [],
-            fName : obj.name,
+            id : 0,
+            name : obj.name,
             fType : {file : null},
-            fCanister : [],
-            fHash : [hash],
-            fData : [nat8Arr],
-            fState : {empty : null},
-            children : [[]]
+            canisterId : "",
+            hash : hash,
+            data : nat8Arr,
+            size : nat8Arr.length,
+            totalChunk : Math.ceil(nat8Arr.length / chunkLength),
+            state : {empty : null},
+            children : []
           };
-          ret.children[0].push(f);
+          ret.children.push(f);
         }
         
         entry = await entries.next();
       }
       return ret;
     }
-    
-  function isHashEqual(hashA, hashB) {
-    if (hashA.length > 0 && hashA.length == hashB.length) {
-       if (hashA[0] === hashB[0]) {
-          return true;
-       }
-    }
-    return false;
-  }
 
   function getIsFolder(fileType) {
     if (fileType && fileType.hasOwnProperty('directory')) {
