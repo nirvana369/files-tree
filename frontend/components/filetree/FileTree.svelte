@@ -9,8 +9,13 @@
     {:else}
       <!-- <div class="name" on:click={openUrl}> -->
         {'📜'}
-        <a href={'http://ryjl3-tyaaa-aaaaa-aaaba-cai.localhost:8000/' + $user + '/' + rootId + '/' + file.hash} target="_blank">{file.name}</a>
-        {isSync ?  '✅' : '❌'}
+        {#if isSync}
+          <a href={url + $user + '/' + rootId + '/' + file.hash} target="_blank">{file.name}</a>
+          {'✅'}
+        {:else}
+          {file.name}
+          {'❌'}
+        {/if}
       <!-- </div> -->
     {/if}
     {#if isFolder && isOpen}
@@ -27,20 +32,26 @@
   import {getIsFolder} from "../../utils";
   import FileTree from "./FileTree.svelte";
   import { user } from "../../stores";
-
+  import { useCanister } from "@connect2ic/svelte";
+  
   export let file;
   export let rootId;
-
+  
+  const [fileTreeRegistry] = useCanister("registry")
   let isOpen = true;
+  const url = getServerUrl();
 
   function toggleOpen() {
     isOpen = !isOpen;
   }
 
-  function openUrl() {
-    window.open('http://ryjl3-tyaaa-aaaaa-aaaba-cai.localhost:8000/' + $user + '/' + rootId + '/' + file.hash, '_blank').focus();
+  function getServerUrl() {
+    if (process.env.NODE_ENV !== "ic") {
+      return 'http://' + process.env.REGISTRY_CANISTER_ID + '.localhost:8000/';
+    } else {
+      return 'https://' + process.env.REGISTRY_CANISTER_ID + '.ic0.app/';
+    }
   }
-
   function getIsSync() {
     if (file.fType && file.fType.hasOwnProperty('directory')) {
       return false;
@@ -48,9 +59,11 @@
     return (file.state && file.state.hasOwnProperty('ready'));
     // return file.children && file.children.length > 0;
   }
-  
+
   $: isSync = getIsSync();
   $: isFolder = getIsFolder(file.fType);
+
+
 </script>
 
 <style>

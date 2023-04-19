@@ -3,6 +3,7 @@ import ICType "IC";
 import Types "types";
 import FileManager "file-manager";
 
+
 import Result "mo:base/Result";
 import Principal "mo:base/Principal";
 import Cycles "mo:base/ExperimentalCycles";
@@ -60,11 +61,9 @@ shared ({caller}) actor class FileRegistry() = this {
     let _fileTreeRegistry : HashMap.HashMap<Principal, [Nat]> = HashMap.fromIter<Principal, [Nat]>(_stableFileTreeRegistry.vals(), 10, Principal.equal, Principal.hash);
     let _streamCache : HashMap.HashMap<Text, Types.FileChunk> = HashMap.HashMap(0, Text.equal, Text.hash);
 
-    public func grantCanisterStorageCallPermission() {
-
-    };
 
     public shared ({caller}) func eventHandler(event : Types.Event) : async () {
+        // verify caller is storage canister -> only storage canister can handle this event message
         switch(event) {
             case(#UpdateFileState (fileTreeId, fileId)) {
                 _updateFileState(fileTreeId, fileId, #ready);
@@ -113,10 +112,6 @@ shared ({caller}) actor class FileRegistry() = this {
     };
 
     public shared ({caller}) func verifyFileTree(fileTree : Types.FileTree) : async Types.FileTree {
-        // get list file tree of caller
-
-        // loop and recursive compare file name && file hash && 
-
         let fileManager = FileManager.init(fileTree);
         fileManager.verify();
     };
@@ -133,10 +128,8 @@ shared ({caller}) actor class FileRegistry() = this {
             await file.registerFile(storageCanisterId, IdGen, _createFileId(), caller);
         });
         
-        // update FileTree -> file will have canister id + id
-        
         let imutableFileTree = fileManager.freeze();
-        // return result for client -> client call canister file storage by canister id + id file to upload direct
+
         _putRegistry(caller, fileManager.getRootId());
         _putFileTree(fileManager.getRootId(), imutableFileTree);
 
@@ -224,10 +217,10 @@ shared ({caller}) actor class FileRegistry() = this {
 
     // move a file/folder A to folder B
     public shared ({caller}) func moveFile(fileTreeId: Nat, pathA : Text, pathB : Text) : async Result.Result<Types.FileTree, Text> {
-        switch (_getFileTree(fileTreeId)) {
-            case null #err "File tree are not exist!";
-            case (?fTree) {
-                let fileManager = FileManager.init(fTree);
+        let fTree = switch (_verifyOwner(caller, fileTreeId)) {
+            case null return #err "File tree are not exist!";
+            case (?tree) {
+                let fileManager = FileManager.init(tree);
 
                 fileManager.move(pathA, pathB);
 
@@ -241,9 +234,11 @@ shared ({caller}) actor class FileRegistry() = this {
     };
 
     public query ({caller}) func getFileTree(id : Nat) : async Result.Result<Types.FileTree, Text> {
-        switch (_getFileTree(id)) {
-            case null #err "File tree are not exist!";
-            case (?fTree) #ok fTree;
+        let fTree = switch (_verifyOwner(caller, id)) {
+            case null return #err "File tree are not exist!";
+            case (?tree) {
+                #ok (tree);
+            };
         };
     };
 
@@ -262,7 +257,6 @@ shared ({caller}) actor class FileRegistry() = this {
     };
 
     public shared ({caller}) func streamUpFile(fileTreeId : Nat, fileId : Nat, fchunk : Types.FileChunk) : async Result.Result<Nat, Text> {
-        
         let fileTree = switch (_verifyOwner(caller, fileTreeId)) {
             case null return #err "File not exist";
             case (?ft) ft;
@@ -435,6 +429,11 @@ shared ({caller}) actor class FileRegistry() = this {
         _fileTreeStorage.get(id);
     };
 
+    public shared(msg) func getCanisterId() : async Text {
+        let canisterId = Principal.toText(Principal.fromActor(this));
+        return canisterId;
+    };
+
     // The work required before a canister upgrade begins.
     system func preupgrade() {
         // Debug.print("Starting pre-upgrade hook...");
@@ -462,9 +461,99 @@ shared ({caller}) actor class FileRegistry() = this {
     // Http 
     let NOT_FOUND : Types.HttpResponse = {status_code = 404; headers = []; body = Blob.fromArray([]); upgrade = null; streaming_strategy = null};
     let BAD_REQUEST : Types.HttpResponse = {status_code = 400; headers = []; body = Blob.fromArray([]); upgrade = null; streaming_strategy = null};
+    
+    
+
+    public shared func http_request_streaming_callback(token : Types.HttpStreamingCallbackToken) : async Types.HttpStreamingCallbackResponse {
+        let fileHash = token.key;
+        let chunkId = token.index;
+        let fileTreeId = switch(_streamCache.get(fileHash)) {
+            case (null) { 0 };
+            case (?fileTreeInfo) {
+                fileTreeInfo.fileId;
+            }
+        };
+        let fileTree = switch (_getFileTree(fileTreeId)) {
+            case null return {body = Blob.fromArray([]); token = null};
+            case (?ft) {
+                ft;
+            }
+        };
+        let fm = FileManager.init(fileTree);
+        let file = switch (fm.get(?#file, ?#hash(fileHash))) {
+            case null return {body = Blob.fromArray([]); token = null};
+            case (?f) f;
+        };
+        switch(_streamCache.get(_keyStreamCache(fileHash, chunkId))){
+            case(?chunkCache) {
+                let res = await _streamContent(fileHash, chunkCache, file.getTotalChunk());
+                return {
+                    body = res.0;
+                    token = res.1;
+                };
+            };
+            case null {
+                // init file tree
+                // find file by hash
+                // get chunk
+                let chunkRet = await file.getChunk(chunkId, false);
+                switch (chunkRet) {
+                    case (#err (e)) {
+                        return return {body = Text.encodeUtf8 (e); token = null};
+                    };
+                    case (#ok (chunk)) {
+                        let res = await _streamContent(fileHash, chunk, file.getTotalChunk());
+                        return {
+                            body = res.0;
+                            token = res.1;
+                        };
+                    };
+                };
+            };
+        };
+    };
+
+    public query func http_request(request : Types.HttpRequest) : async Types.HttpResponse {
+        let path = Buffer.fromIter<Text>(Text.tokens(request.url, #text("/")));
+        let fHash = Buffer.fromIter<Text>(Text.tokens(path.get(path.size() - 1), #text("?"))).get(0);
+        let fTreeId = _textToNat(path.get(path.size() - 2));
+        let owner = path.get(path.size() - 3);
+        let chunkId = switch(_getParam(request.url, "chunkId")) {
+            case null 0;
+            case (?cid) _textToNat(cid);
+        };
+        let fileTree = switch(_verifyOwner(Principal.fromText(owner), fTreeId)) {
+            case(?value) { value };
+            case(null) { return _defaultResponse(?"File tree not exist!") };
+        };
+        let fm = FileManager.init(fileTree);
+        switch(fm.get(?#file, ?#hash(fHash))) {
+            case null return _defaultResponse(?("File not exist! : " # fHash));  
+            case (?f) {
+                // // support stream callback get file tree -> get file Hash
+                _streamCache.put(fHash, {
+                    fileId = fTreeId;
+                    chunkOrderId = 0;
+                    data = [];
+                });
+                // return await _processFile(f, chunkId);
+            };
+        };
+        {
+            upgrade = ?true;
+            status_code = 200;
+            headers = [("content-type", "text/plain")];
+            body = Text.encodeUtf8 (
+                "Cycle Balance:                            ~" # debug_show (Cycles.balance()/1000000000000) # "T\n"
+            );
+            streaming_strategy = null;
+        }
+    };
+
     private func _keyStreamCache(hash : Text, chunkId : Nat) : Text {
         hash # "_" # Nat.toText(chunkId);
     };
+    
     private func _streamContent(fileHash : Text, chunk : Types.FileChunk, totalChunk : Nat) : async (Blob, ?Types.HttpStreamingCallbackToken) {
         let payload = Blob.fromArray(chunk.data);
         if (chunk.chunkOrderId > 0) {
@@ -531,141 +620,6 @@ shared ({caller}) actor class FileRegistry() = this {
         
     };
 
-    public shared func http_request_streaming_callback(token : Types.HttpStreamingCallbackToken) : async Types.HttpStreamingCallbackResponse {
-        let fileHash = token.key;
-        let chunkId = token.index;
-        let fileTreeId = switch(_streamCache.get(fileHash)) {
-            case (null) { 0 };
-            case (?fileTreeInfo) {
-                fileTreeInfo.fileId;
-            }
-        };
-        let fileTree = switch (_getFileTree(fileTreeId)) {
-            case null return {body = Blob.fromArray([]); token = null};
-            case (?ft) {
-                ft;
-            }
-        };
-        let fm = FileManager.init(fileTree);
-        let file = switch (fm.get(?#file, ?#hash(fileHash))) {
-            case null return {body = Blob.fromArray([]); token = null};
-            case (?f) f;
-        };
-        switch(_streamCache.get(_keyStreamCache(fileHash, chunkId))){
-            case(?chunkCache) {
-                let res = await _streamContent(fileHash, chunkCache, file.getTotalChunk());
-                return {
-                    body = res.0;
-                    token = res.1;
-                };
-            };
-            case null {
-                // init file tree
-                // find file by hash
-                // get chunk
-                let chunkRet = await file.getChunk(chunkId, false);
-                switch (chunkRet) {
-                    case (#err (e)) {
-                        return return {body = Text.encodeUtf8 (e); token = null};
-                    };
-                    case (#ok (chunk)) {
-                        let res = await _streamContent(fileHash, chunk, file.getTotalChunk());
-                        return {
-                            body = res.0;
-                            token = res.1;
-                        };
-                    };
-                };
-            };
-        };
-    };
-
-    private func _getParam(url : Text, param : Text) : ?Text {
-        var _s : Text = url;
-        Iter.iterate<Text>(Text.split(_s, #text("/")), func(x, _i) {
-            _s := x;
-        });
-        Iter.iterate<Text>(Text.split(_s, #text("?")), func(x, _i) {
-            if (_i == 1) _s := x;
-        });
-        var t : ?Text = null;
-        var found : Bool = false;
-        Iter.iterate<Text>(Text.split(_s, #text("&")), func(x, _i) {
-        if (found == false) {
-            Iter.iterate<Text>(Text.split(x, #text("=")), func(y, _ii) {
-                if (_ii == 0) {
-                    if (Text.equal(y, param)) found := true;
-                } else if (found == true) t := ?y;
-            });
-        };
-        });
-        return t;
-    };
-
-    public query func http_request(request : Types.HttpRequest) : async Types.HttpResponse {
-        let path = Buffer.fromIter<Text>(Text.tokens(request.url, #text("/")));
-        let fHash = Buffer.fromIter<Text>(Text.tokens(path.get(path.size() - 1), #text("?"))).get(0);
-        let fTreeId = _textToNat(path.get(path.size() - 2));
-        let owner = path.get(path.size() - 3);
-        let chunkId = switch(_getParam(request.url, "chunkId")) {
-            case null 0;
-            case (?cid) _textToNat(cid);
-        };
-        let fileTree = switch(_verifyOwner(Principal.fromText(owner), fTreeId)) {
-            case(?value) { value };
-            case(null) { return _defaultResponse(?"File tree not exist!") };
-        };
-        let fm = FileManager.init(fileTree);
-        switch(fm.get(?#file, ?#hash(fHash))) {
-            case null return _defaultResponse(?("File not exist! : " # fHash));  
-            case (?f) {
-                // // support stream callback get file tree -> get file Hash
-                _streamCache.put(fHash, {
-                    fileId = fTreeId;
-                    chunkOrderId = 0;
-                    data = [];
-                });
-                // return await _processFile(f, chunkId);
-            };
-        };
-        {
-            upgrade = ?true;
-            status_code = 200;
-            headers = [("content-type", "text/plain")];
-            body = Text.encodeUtf8 (
-                "Cycle Balance:                            ~" # debug_show (Cycles.balance()/1000000000000) # "T\n"
-                // "Storage:                                   " # debug_show (_assets.size()) # "\n"
-            );
-            streaming_strategy = null;
-        }
-    };
-
-    private func _defaultResponse(err : ?Text) : Types.HttpResponse {
-        switch(err) {
-            case(?info) {  
-                {
-                    upgrade = null;
-                    status_code = 200;
-                    headers = [("content-type", "text/plain")];
-                    body = Text.encodeUtf8 (info);
-                    streaming_strategy = null;
-                }
-            };
-            case(null) { 
-                {
-                    upgrade = null;
-                    status_code = 200;
-                    headers = [("content-type", "text/plain")];
-                    body = Text.encodeUtf8 (
-                        "Cycle Balance:                            ~" # debug_show (Cycles.balance()/1000000000000) # "T\n"
-                        // "Storage:                                   " # debug_show (_assets.size()) # "\n"
-                    );
-                    streaming_strategy = null;
-                }
-            };
-        };
-    };
-
     public shared func http_request_update(request : Types.HttpRequest) : async Types.HttpResponse {
         let path = Buffer.fromIter<Text>(Text.tokens(request.url, #text("/")));
         let fHash = Buffer.fromIter<Text>(Text.tokens(path.get(path.size() - 1), #text("?"))).get(0);
@@ -695,6 +649,32 @@ shared ({caller}) actor class FileRegistry() = this {
         return _defaultResponse(null);
     };
 
+    private func _defaultResponse(err : ?Text) : Types.HttpResponse {
+        switch(err) {
+            case(?info) {  
+                {
+                    upgrade = null;
+                    status_code = 200;
+                    headers = [("content-type", "text/plain")];
+                    body = Text.encodeUtf8 (info);
+                    streaming_strategy = null;
+                }
+            };
+            case(null) { 
+                {
+                    upgrade = null;
+                    status_code = 200;
+                    headers = [("content-type", "text/plain")];
+                    body = Text.encodeUtf8 (
+                        "Cycle Balance:                            ~" # debug_show (Cycles.balance()/1000000000000) # "T\n"
+                        // "Storage:                                   " # debug_show (_assets.size()) # "\n"
+                    );
+                    streaming_strategy = null;
+                }
+            };
+        };
+    };
+
     private func _textToNat(t : Text) : Nat {
         var reversed : [Nat32] = [];
         for(c in t.chars()) {
@@ -708,5 +688,27 @@ shared ({caller}) actor class FileRegistry() = this {
             place := place * 10;
         };
         total;
+    };
+
+    private func _getParam(url : Text, param : Text) : ?Text {
+        var _s : Text = url;
+        Iter.iterate<Text>(Text.split(_s, #text("/")), func(x, _i) {
+            _s := x;
+        });
+        Iter.iterate<Text>(Text.split(_s, #text("?")), func(x, _i) {
+            if (_i == 1) _s := x;
+        });
+        var t : ?Text = null;
+        var found : Bool = false;
+        Iter.iterate<Text>(Text.split(_s, #text("&")), func(x, _i) {
+        if (found == false) {
+            Iter.iterate<Text>(Text.split(x, #text("=")), func(y, _ii) {
+                if (_ii == 0) {
+                    if (Text.equal(y, param)) found := true;
+                } else if (found == true) t := ?y;
+            });
+        };
+        });
+        return t;
     };
 };

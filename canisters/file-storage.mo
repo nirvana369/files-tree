@@ -24,12 +24,9 @@ shared ({caller}) actor class FileStorage() = this {
 
     let DATASTORE_CANISTER_CAPACITY : Nat = 2_000_000_000;
 
-    // Size limit of each note is 2 MB.
-    let FILE_DATA_SIZE = 2_000_000;
+    var CHUNK_SIZE = 2_000_000; // 2 MB
 
-    var CHUNK_SIZE = 1_000_000; // 1 MB
-
-    let _numberOfDataPerCanister : Nat = DATASTORE_CANISTER_CAPACITY / FILE_DATA_SIZE;
+    let _numberOfDataPerCanister : Nat = DATASTORE_CANISTER_CAPACITY / CHUNK_SIZE;
 
     var totalCanisterDataSize = 0;
 
@@ -105,7 +102,7 @@ shared ({caller}) actor class FileStorage() = this {
             };
             case (_) {
                 // not process if receive
-                // counter number call
+                // monitor number wrong call
             };
         };
     };
@@ -186,10 +183,7 @@ shared ({caller}) actor class FileStorage() = this {
         (?IdGenChunk);
     };
 
-    /**
-    *   
-    *   Chunk id default is 0
-    */
+    
     public query ({caller}) func streamDown(chunkId : Nat) : async ?Types.FileChunk {
         assert(caller == _admin);
 

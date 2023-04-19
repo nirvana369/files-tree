@@ -16,7 +16,7 @@
             ListItem, 
             Button,
             Loading,
-            FileUploader } from "carbon-components-svelte";
+             } from "carbon-components-svelte";
   import {
     Header,
     HeaderNav,
@@ -82,7 +82,7 @@
     toogleSyncModal(false);
   }
 
-  function reload() {
+  async function reload() {
     promise = reloadFileTrees();
   }
 
@@ -114,27 +114,20 @@
         //do whatever here..
         if (auth) {
           clearInterval(interval);
-          // let ret = await $fileTreeRegistry.getListFileTree();
-          // if (ret.ok) {
-          //     $serverFileTrees = ret.ok;
-          //     $localFileTrees = [...$localFileTrees, ...$serverFileTrees];
-          // } else {
-          //   console.log("getListFileTree #ERR:");
-          //   console.log(ret);
-          // }
+
           reload();
 
-          let whoami = await $fileTreeRegistry.whoami();
-          console.log("WHO ARE YOU 2");
-          console.log(whoami);
+          // let whoami = await $fileTreeRegistry.whoami();
+          // console.log("WHO ARE YOU 2");
+          // console.log(whoami);
           $user = $principal;
           // code to fetch tree data from server
         }
     }, 2000);  
-
-    let whoami = await $fileTreeRegistry.whoami();
-    console.log("WHO ARE YOU 1");
-    console.log(whoami);
+    
+    // let whoami = await $fileTreeRegistry.whoami();
+    // console.log("WHO ARE YOU 1");
+    // console.log(whoami);
     // code to fetch tree data from server
   });
 

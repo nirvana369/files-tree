@@ -8,10 +8,6 @@
       "main": "canisters/file-storage.mo",
       "type": "motoko"
     },
-    "test": {
-      "main": "canisters/test.mo",
-      "type": "motoko"
-    },
     "assets": {
       "dependencies": [
         "registry",

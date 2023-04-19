@@ -109,6 +109,7 @@ module {
                     Debug.trap(pathA # " not exist ");
                 };
                 case ((?a, ?b)) {
+                    // addChild() missing case check B childs hash folder or file same name with A -> need update!
                     b.addChild(a);
                 };
             };
@@ -138,6 +139,7 @@ module {
 
         public func copy(pathA : Text) {
             _assert();
+            // not implemented
         };
 
         public func getPaths() : [Text] {

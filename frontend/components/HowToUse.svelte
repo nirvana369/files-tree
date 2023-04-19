@@ -55,8 +55,9 @@
             AccordionItem,
             DataTable} from "carbon-components-svelte";
   import { useCanister } from "@connect2ic/svelte";
-    const [fileTreeRegistry] = useCanister("registry")
+  const [fileTreeRegistry] = useCanister("registry")
 
-    let promiseRegistry = $fileTreeRegistry.getServerInfo();
-    let promiseStorage = $fileTreeRegistry.getStorageInfo();
+  let promiseRegistry = $fileTreeRegistry.getServerInfo();
+  let promiseStorage = $fileTreeRegistry.getStorageInfo();
+    // console.log(process.env.NODE_ENV);
 </script>
