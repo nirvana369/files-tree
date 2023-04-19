@@ -37,7 +37,7 @@ import md5 from 'md5';
       let children = [];
       let markB = {};
       for(const i of leafA.children) {
-        let isSame = false;
+          let isSame = false;
           for(const j of leafB.children) {
               if (markB[j.name] != true && i.name === j.name) {
                 if (getIsFolder(i.fType) && getIsFolder(j.fType)) {

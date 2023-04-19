@@ -20,11 +20,6 @@ shared ({caller}) actor class FileStorage() = this {
     // Bind the caller and the admin
     let _admin : Principal = caller;
 
-    type File = Types.File;
-    type FileChunk = Types.FileChunk;
-    type FileState = Types.FileState;
-
-    
     var IdGenChunk = 0;
 
     let DATASTORE_CANISTER_CAPACITY : Nat = 2_000_000_000;
@@ -42,11 +37,11 @@ shared ({caller}) actor class FileStorage() = this {
 
     // stable var _stableDatastores : [(Nat, FileTree)] = [];
     // let _datastores = HashMap.fromIter<Nat, FileTree>(_stableDatastores.vals(), 10, Nat.equal, Hash.hash);
-    let _datastores : HashMap.HashMap<Nat, File> = HashMap.HashMap<Nat, File>(10, Nat.equal, Hash.hash);
+    let _datastores : HashMap.HashMap<Nat, Types.File> = HashMap.HashMap<Nat, Types.File>(10, Nat.equal, Hash.hash);
 
-    let _chunkCache : HashMap.HashMap<Nat, FileChunk> = HashMap.HashMap<Nat, FileChunk>(10, Nat.equal, Hash.hash);
+    let _chunkCache : HashMap.HashMap<Nat, Types.FileChunk> = HashMap.HashMap<Nat, Types.FileChunk>(10, Nat.equal, Hash.hash);
 
-    // EVENT BUS SECTION - Cross canister notify & handle event
+    // EVENT BUS SECTION - Cross canister notify & handle event (process oneway message)
 
     private func _updateFileChunk(fileId : Nat, chunkInfo: Types.ChunkInfo) : async () {
         switch (_datastores.get(fileId)) {
@@ -78,11 +73,11 @@ shared ({caller}) actor class FileStorage() = this {
 
                     if (map.size() == file.totalChunk) { // if collected enough chunks
                         if (checkFileHash) {
-                            // join file - hash - compare hash
+                            // join file - hash - compare hash if needed
                         };
                         state := #ready;
-                        // notify 
-                        ignore notify(Principal.toText(_admin), (#UpdateFileState (file.rootId, file.id)));
+                        // notify to file manager
+                         await notify(Principal.toText(_admin), (#UpdateFileState (file.rootId, file.id)));
                     };
                     
                 };
@@ -121,7 +116,7 @@ shared ({caller}) actor class FileStorage() = this {
     };
     // FILE STORAGE SECTION : CRUD function
 
-    public shared ({caller}) func putFile(file : File) : async File {
+    public shared ({caller}) func putFile(file : Types.File) : async Types.File {
         // only filetree-registry (proxy) can call
         assert(caller == _admin);
         // check storage available -> if not enough return fid = 0, file manager will create new storage canister
@@ -133,7 +128,7 @@ shared ({caller}) actor class FileStorage() = this {
         return file;
     };
 
-    public query ({caller}) func readFile(id : Nat) : async ?File {
+    public query ({caller}) func readFile(id : Nat) : async ?Types.File {
         assert(caller == _admin);
         let storageFile = _datastores.get(id);
         switch (storageFile) {
@@ -171,11 +166,9 @@ shared ({caller}) actor class FileStorage() = this {
         }
     };
     
-    public shared ({caller}) func streamUp(fileCanisterId : Text, chunk : FileChunk) : async ?Nat {
-        // let (fileOwner, fileRegistered) = _getPermission(caller, fchunk.owner, fchunk.fileId);
+    public shared ({caller}) func streamUp(fileCanisterId : Text, chunk : Types.FileChunk) : async ?Nat {
         assert(caller == _admin);
 
-        // does need verify file first ?
         IdGenChunk := IdGenChunk + 1;
 
         _chunkCache.put(IdGenChunk, chunk);
@@ -197,7 +190,7 @@ shared ({caller}) actor class FileStorage() = this {
     *   
     *   Chunk id default is 0
     */
-    public shared ({caller}) func streamDown(chunkId : Nat) : async ?FileChunk {
+    public query ({caller}) func streamDown(chunkId : Nat) : async ?Types.FileChunk {
         assert(caller == _admin);
 
         switch (_chunkCache.get(chunkId)) {
@@ -220,7 +213,7 @@ shared ({caller}) actor class FileStorage() = this {
     };
 
     public func getCanisterFilesAvailable() : async Nat {
-        return (DATASTORE_CANISTER_CAPACITY - totalCanisterDataSize) / _numberOfDataPerCanister; // (DATASTORE_CANISTER_CAPACITY - current memory used) / number item per canister
+        return (DATASTORE_CANISTER_CAPACITY - totalCanisterDataSize) / _numberOfDataPerCanister;
     };
 
      // The work required before a canister upgrade begins.

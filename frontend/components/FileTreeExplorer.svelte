@@ -3,7 +3,7 @@
   import FileTreeItem from "./filetree/FileTreeItem.svelte";
   import { onMount } from 'svelte';
   import { useCanister } from "@connect2ic/svelte";
-  import { localFileTrees, serverFileTrees, syncFiles } from "../stores.js"
+  import { localFileTrees, serverFileTrees, syncFiles, user } from "../stores.js"
   import { traverseDirectory} from "../utils";
   import { useConnect } from "@connect2ic/svelte"
   import LoginButton from "./LoginButton.svelte"
@@ -15,7 +15,8 @@
             OrderedList, 
             ListItem, 
             Button,
-            Loading } from "carbon-components-svelte";
+            Loading,
+            FileUploader } from "carbon-components-svelte";
   import {
     Header,
     HeaderNav,
@@ -69,33 +70,6 @@
     console.log(fileTree);
     // let r = await objectStore.add(fileTree);
     let tmp = await $fileTreeRegistry.verifyFileTree(fileTree);
-    
-    
-    // let test = await $fileTest.test(fileTree);
-    // console.log("TEST");
-    // console.log(test);
-
-    let testPath = await $fileTest.add(fileTree);
-    console.log("TEST PATH");
-    console.log(testPath);
-
-    // let testNodeInfo = await $fileTest.testNodeInfo(fileTree);
-    // console.log("TEST NODE INFO");
-    // console.log(testNodeInfo);
-
-
-    // let testMove = await $fileTest.testMove(fileTree, "/abc/def", "/abc/def/ghj");
-    // console.log("TEST MOVE");
-    // console.log(testMove);
-
-    // testPath = await $fileTest.testPath(testMove);
-    // console.log("TEST PATH");
-    // console.log(testPath);
-
-    // testNodeInfo = await $fileTest.testNodeInfo(testMove);
-    // console.log("TEST NODE INFO");
-    // console.log(testNodeInfo);
-
 
     
     directoryHandlePointer[fileTree.name] = directoryHandle;
@@ -153,7 +127,7 @@
           let whoami = await $fileTreeRegistry.whoami();
           console.log("WHO ARE YOU 2");
           console.log(whoami);
-          
+          $user = $principal;
           // code to fetch tree data from server
         }
     }, 2000);  
@@ -177,6 +151,7 @@
         <img src={logo} alt="DFiles logo" style="height: 50%;">
       </svelte:fragment>
       <HeaderNav>
+
         <Button on:click={() => selectFolder()} size="small" kind="ghost">Create new</Button>
       </HeaderNav>
 
@@ -184,7 +159,6 @@
         <LoginButton />
       </HeaderUtilities>
     </Header>
-
     
     <HowToUse/>
 

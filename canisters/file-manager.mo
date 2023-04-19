@@ -7,68 +7,24 @@ import Text "mo:base/Text";
 import Iter "mo:base/Iter";
 import Nat "mo:base/Nat";
 import Hash "mo:base/Hash";
+import Result "mo:base/Result";
+import Principal "mo:base/Principal";
+import Time "mo:base/Time";
 
 
 module {
-
-
-    // public func merge(name : Text, ftA : Types.MutableFileTree, ftB : Types.MutableFileTree) : Types.MutableFileTree {
-
-    // };
-
-    // private func _asyncIter(level : Nat, path : Text, fileTree : FileTree, f : (Text, FileTree) -> async ()) : async () {
-    //     switch (fileTree.getType()) {
-    //         case (#file) {
-    //             await f(path # "/" # fileTree.getName(), fileTree);
-    //         };
-    //         case (#directory) {
-    //             await f(path # "/" # fileTree.getName(), fileTree);
-    //             for (child in fileTree.getChilds().vals()) {
-    //                 await _asyncIter(level + 1, path # "/" # fileTree.getName(), child, f);
-    //             };
-    //         };
-    //     };
-    // };
-
-    // private func _iter(level : Nat, path : Text, fileTree : FileTree, f : (Text, FileTree) -> ()) {
-    //     switch (fileTree.getType()) {
-    //         case (#file) {
-    //             f(path # "/" # fileTree.getName(), fileTree);
-    //         };
-    //         case (#directory) {
-    //             f(path # "/" # fileTree.getName(), fileTree);
-    //             for (child in fileTree.getChilds().vals()) {
-    //                 _iter(level + 1, path # "/" # fileTree.getName(), child, f);
-    //             };
-    //         };
-    //     };
-    // };
-
-    private func _iterFiles(fileTree : FileTree, callback : (FileTree) -> ()) {
-        _iter(fileTree, func (f) {
-            if (f.getType() == #file) {
-                callback(f);
-            };
-        });
-    };
-
-    private func _asyncIterFiles(fileTree : FileTree, f : (Types.MutableFileTree) -> async ()) : async () {
-        await _asyncIter(fileTree, func (x : FileTree) : async () {
-            if (x.getType() == #file) {
-                await f(x.get());
-            };
-        });
-    };
-
-    // private func _iterDirs(fileTree : Types.MutableFileTree, f : (Types.MutableFileTree) -> ()) {
-        
-    // };
 
     public type FilterType = {
         #name : Text;
         #id : Nat;
         #hash : Text;
         #size : Nat;
+    };
+
+    public func init(ft : Types.FileTree) : FileManager {
+        let fm = FileManager(ft);
+        fm.init();
+        fm;
     };
 
     public class FileManager(ft : Types.FileTree) {
@@ -81,14 +37,14 @@ module {
             // check children:
             // 1/ 2 folder in a folder have same name
             // 2/ 2 file in a folder have same name or same hash
-            if (not _verify(fileTree)) {
+            if (not _dupCheck(fileTree)) {
                 Debug.trap("File Tree has 2 folder or file with same name in a folder")
             };
             _convert2FileTree(fileTree.update());
         };
 
         // make sure in a folder not have 2 folder or 2 file with same name
-        private func _verify(f : FileTree) : Bool {
+        private func _dupCheck(f : FileTree) : Bool {
             let buf = f.getChilds();
             for (i in Iter.range(0, buf.size() - 2)) {
                 for (j in Iter.range(i + 1, buf.size() - 1)) {
@@ -100,11 +56,29 @@ module {
                 };
             };
             for (c in buf.vals()) {
-                if (not _verify(c)) {
+                if (not _dupCheck(c)) {
                     return false;
                 };
             };
             return true;
+        };
+
+        private func _assert() {
+            if (not isInit) Debug.trap("File Manager is not init! Use: FileManager.init()");
+        };
+
+        public func validation() {
+            _assert();
+            var count = 0;
+            for (child in paths.vals()) {
+                switch (child.getParent()) {
+                    case null count += 1;
+                    case (?p) ();
+                };
+            };
+            if (count > 1) {
+                Debug.trap("Only root not need parent, here is number of node don't have parent: " # Nat.toText(count));
+            };
         };
 
         public func init() {
@@ -120,6 +94,7 @@ module {
         };
 
         public func move(pathA : Text, pathB : Text) {
+            _assert();
             let fA = paths.get(pathA);
             let fB = paths.get(pathB);
             
@@ -140,7 +115,7 @@ module {
         };
 
         public func delete(path : Text) {
-            // make sure call fileTree.update() before -> because this func need call to get parent
+            _assert();
             let f = paths.get(path);
             switch (f) {
                 case null {
@@ -162,10 +137,8 @@ module {
         };
 
         public func copy(pathA : Text) {
-
+            _assert();
         };
-
-
 
         public func getPaths() : [Text] {
             Iter.toArray(paths.keys());
@@ -175,22 +148,27 @@ module {
             fileTree.setId(id);
         };
 
+        public func getRootId() : Nat {
+            fileTree.getId();
+        };
+
         public func iterFiles(f : (FileTree) -> ()) {
             _iterFiles(fileTree, f);
         };
 
-        public func asyncIterFiles(f : (Types.MutableFileTree) -> async ()) : async () {
+        public func asyncIterFiles(f : (FileTree) -> async ()) : async () {
             await _asyncIterFiles(fileTree, f);
         };
 
-        public func getListFile() : [Types.MutableFileTree] {
-            let buf = Buffer.Buffer<Types.MutableFileTree>(1);
+        public func getListFile() : [FileTree] {
+            _assert();
+            let buf = Buffer.Buffer<FileTree>(1);
             // _iterFiles(fileTree, func (f) {
             //     buf.add(f.get());
             // });
             for (f in paths.vals()) {
                 if (f.getType() == #file) {
-                    buf.add(f.get());
+                    buf.add(f);
                 };
             };
             Buffer.toArray(buf);
@@ -205,6 +183,7 @@ module {
         };
 
         public func getListFileFreeze() : [Types.FileTree] {
+            _assert();
             let buf = Buffer.Buffer<Types.FileTree>(1);
             _iterFiles(fileTree, func (f) {
                 buf.add(_convert2FileTree(f.get()));
@@ -213,6 +192,7 @@ module {
         };
 
         public func freeze() : Types.FileTree {
+            _assert();
             _convert2FileTree(fileTree.get());
         };
 
@@ -254,13 +234,8 @@ module {
             });
         };
 
-        public func getBy(t : ?Types.FileType, filterBy : ?FilterType) : ?Types.FileTree {
-            var ret : ?Types.FileTree = null;
-            _iter(fileTree, func (tree) {
-                if (ret == null and _found(t, tree, filterBy)) {
-                    ret := ?_convert2FileTree(tree.get());
-                };
-            });
+        public func get(t : ?Types.FileType, filterBy : ?FilterType) : ?FileTree {
+            var ret : ?FileTree = _find(fileTree, func (tree) = _found(t, tree, filterBy));
             ret;
         };
 
@@ -288,18 +263,7 @@ module {
         let childs = Buffer.map<Types.MutableFileTree, FileTree>(Buffer.fromArray(obj.children), func(mTree) {
             FileTree(level + 1, path, mTree);
         });
-
-        public func removeChild(child : FileTree) : Nat {
-            let size = childs.size();
-            childs.filterEntries(func(_, ftree) {
-                not equal(child, ftree);
-            });
-
-            if (size != childs.size()) {
-                _updateChild();
-            };
-            (size - childs.size());
-        };
+        let chunks = HashMap.HashMap<Nat, Types.FileChunk>(0, Nat.equal, Hash.hash);
 
         public func update() : Types.MutableFileTree {
             _updateChild();
@@ -344,6 +308,18 @@ module {
             true;
         };
 
+        public func removeChild(child : FileTree) : Nat {
+            let size = childs.size();
+            childs.filterEntries(func(_, ftree) {
+                not equal(child, ftree);
+            });
+
+            if (size != childs.size()) {
+                _updateChild();
+            };
+            (size - childs.size());
+        };
+
         public func addChild(file : FileTree) {
             if (canAddChild(file)) {
                 switch (file.getParent()) {
@@ -369,8 +345,6 @@ module {
                 ftree.update();
             }));
         };
-
-
 
         public func updatePath(parentPath : Text) {
             path := parentPath # "/" # obj.name;
@@ -443,27 +417,129 @@ module {
             obj.fType;
         };
 
-        public func putFile() : async () {
-            if (obj.id == 0) {
-                // put file
+        public func getCanisterId() : Text {
+            obj.canisterId;
+        };
+
+        public func getTotalChunk() : Nat {
+            obj.totalChunk;
+        };
+
+        public func registerFile(storageCanisterId : Principal, fileTreeId : Nat, fileId : Nat, owner : Principal) : async () {
+            if (obj.fType == #file and (obj.id == 0 or obj.canisterId == "")) {
+                await putFile(storageCanisterId, fileTreeId, fileId, owner);
             };
         };
 
-        public func getFile() : async ?Types.File {
+        public func getFile(isSync : Bool) : async ?Types.File {
+            _assertFile();
             let canister : Types.FileStorage = actor (obj.canisterId);
-            await canister.readFile(obj.id);
+            let file = await canister.readFile(obj.id);
+            // sync
+            if (isSync) {
+                switch(file) {
+                    case(?f) {
+                        obj.name := f.name;
+                        obj.state := f.state; 
+                        obj.totalChunk := f.totalChunk;
+                        obj.hash := f.hash;
+                        obj.size := f.size;
+                    };
+                    case(null) { };
+                };
+            };
+            file;
         };
 
         public func deleteFile() : async () {
             // when delete file -> all chunk will be delete too
+            if (obj.canisterId != "" and obj.id > 0 and obj.fType == #file) {
+                let storageCanister : Types.FileStorage = actor(obj.canisterId);
+                let ret = await storageCanister.deleteFile(obj.id);
+            }
+        };
+
+        public func putFile(storageCanisterId : Principal, rootId : Nat, fileId : Nat, owner : Principal) : async () {
+            let file : Types.File = {
+                        rootId = rootId;
+                        id = fileId;
+                        name = obj.name;
+                        hash = obj.hash;
+                        chunks = [];
+                        totalChunk = obj.totalChunk;
+                        state = #empty;
+                        owner = owner;
+                        size = obj.size;
+                        lastTimeUpdate = Time.now();
+                    };
+            let storageCanister : Types.FileStorage = actor(Principal.toText(storageCanisterId));
+            let registeredFile = await storageCanister.putFile(file);
+            obj.id := registeredFile.id;
+            obj.canisterId := Principal.toText(storageCanisterId);
+            obj.state := registeredFile.state;
+        };
+
+        public func _assertFile() {
+            _assertId();
+            _assertCanisterId();
+            if (obj.fType != #file) {
+                Debug.trap("This is not a file: " # obj.name);
+            };
+        };
+
+        public func _assertId() {
+            if (obj.id <= 0) {
+                Debug.trap("File id not found");
+            };
+        };
+
+        public func _assertCanisterId() {
+            if (obj.canisterId == "") {
+                Debug.trap("File canister not found");
+            };
         };
 
         public func putChunk(canister : Text) : async () {
 
         };
 
-        public func getChunk(chunkId : Nat) : async () {
+        private func _getChunk(chunkId : Nat) : async Result.Result<Types.FileChunk, Text> {
+            let file = await getFile(true);
+            switch(file) {
+                case(?f) {
+                    let chunkInfo = Array.find<Types.ChunkInfo>(f.chunks, func c = c.chunkOrderId == chunkId);
+                    switch(chunkInfo) {
+                        case(?info) {  
+                            let chunkCanister : Types.FileStorage = actor (info.canisterId);
+                            let chunk = await chunkCanister.streamDown(info.canisterChunkId);
+                            switch(chunk) {
+                                case(?value) { 
+                                    chunks.put(chunkId, value);    
+                                    #ok value;
+                                };
+                                case(null) { return #err ("Chunk not exist: " # Nat.toText(chunkId))};
+                            };
+                        };
+                        case(null) { 
+                            return #err ("Chunk not found: File id: " # Nat.toText(obj.id) # "" # Nat.toText(chunkId) # " File state: ");
+                        };
+                    };
+                };
+                case(null) { return #err ("File " # Nat.toText(obj.id) # " metadata not found") };
+            };
+        };
 
+        public func getChunk(chunkId : Nat, cacheSupport : Bool) : async Result.Result<Types.FileChunk, Text> {
+            if (cacheSupport) {
+                switch (chunks.get(chunkId)) {
+                    case null {
+                        await _getChunk(chunkId);
+                    };
+                    case (?c) #ok c;
+                };
+            } else {
+                await _getChunk(chunkId);
+            };
         };
 
         public func findChild(that : FileTree) : ?FileTree {
@@ -493,11 +569,40 @@ module {
             };
     };
 
+    private func _find(tree : FileTree, f : (FileTree) -> Bool) : ?FileTree {
+        var isReturn : Bool = f(tree);
+        if (isReturn) return ?tree;
+        for (child in tree.getChilds().vals()) {
+            let ret = _find(child, f);
+            switch(ret) {
+                case(?found) { return ?found };
+                case(null) { };
+            };
+        };
+        return null;
+    };
+
     private func _asyncIter(tree : FileTree, f : (FileTree) -> async ()) : async () {
             await f(tree);
             for (child in tree.getChilds().vals()) {
                 await _asyncIter(child, f);
             };
+    };
+
+    private func _iterFiles(fileTree : FileTree, callback : (FileTree) -> ()) {
+        _iter(fileTree, func (f) {
+            if (f.getType() == #file) {
+                callback(f);
+            };
+        });
+    };
+
+    private func _asyncIterFiles(fileTree : FileTree, f : (FileTree) -> async ()) : async () {
+        await _asyncIter(fileTree, func (x : FileTree) : async () {
+            if (x.getType() == #file) {
+                await f(x);
+            };
+        });
     };
 
     // private func _filePathLevel(path : Text) : Buffer.Buffer<Text> {

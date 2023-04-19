@@ -20,8 +20,8 @@ actor {
             case null Debug.trap("empty");
             case (?f) f;
         };
-        let f = FileManager.FileManager(fileTree);
-        f.init();
+        let f = FileManager.init(fileTree);
+        f.validation();
         f.freeze();
     };
 
@@ -31,8 +31,8 @@ actor {
             case null Debug.trap("empty");
             case (?f) f;
         };
-        let f = FileManager.FileManager(fileTree);
-        f.init();
+        let f = FileManager.init(fileTree);
+        f.validation();
         f.getListFileFreeze();
     };
 
@@ -42,8 +42,8 @@ actor {
             case null Debug.trap("empty");
             case (?f) f;
         };
-        let f = FileManager.FileManager(fileTree);
-        f.init();
+        let f = FileManager.init(fileTree);
+        f.validation();
         f.getListPath();
     };
 
@@ -53,8 +53,9 @@ actor {
             case null Debug.trap("empty");
             case (?f) f;
         };
+        // let f = FileManager.init(fileTree);
         let f = FileManager.FileManager(fileTree);
-        f.init();
+        // f.validation(); 
         f.move(pathA, pathB);
         f.freeze();
     };

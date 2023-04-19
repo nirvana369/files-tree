@@ -63,32 +63,28 @@ module {
     };
 
     public type FileStorage = actor {
-        // proxyPutFile : shared (Principal, Nat, [Nat8]) -> async Result.Result<Nat, Text>;
-        // proxyGetFile : query (Principal, Nat) -> async Result.Result<File, Text>;
-        // proxyDeleteFile : shared (Principal, Nat) -> async Result.Result<Nat, Text>;
         putFile : shared (file : File) -> async File;
         getCanisterFilesAvailable : shared () -> async Nat;
         getCanisterMemoryAvailable : shared () -> async Nat;
         // getCanisterId : shared () -> async Principal;
-        // putFile : shared (Nat, [Nat8]) -> async Result.Result<Nat, Text>;
         readFile : query (Nat) -> async ?File;
         deleteFile : shared (Nat) -> async Result.Result<Nat, Text>;
         streamUp : shared (Text, FileChunk) -> async ?Nat;
-        streamDown : shared (Nat) -> async ?FileChunk;
+        streamDown : query (Nat) -> async ?FileChunk;
         eventHandler : shared (Event) -> async ();
         deleteChunk : shared (Nat) -> async ();
-        // proxyStreamUpFile : shared (FileChunk) -> async Result.Result<(), Text>;
-        // proxyStreamDownFile : shared (Nat, Nat) -> async Result.Result<FileChunk, Text>;
         // whoami : query () -> async Text;
     };
 
     public type EventBus = actor {
-        eventHandler : shared (Event) -> async ();
+        eventHandler : query (Event) -> async ();
     };
 
     public type Event = {
         #StreamUpChunk : (Nat, ChunkInfo);      //  #UpdateFileState(FileId, ChunkId, ChunkCanister, ChunkOrderId); -> update chunk info to file metadata
         #UpdateFileState : (Nat, Nat);   //  #UpdateFileTreeState(FileTreeId, FileId); -> update state file to ready
+        #SyncCache : (Text, Nat);  // sync cache file id, chunk id - speed up streaming
+        #DeleteChunk : (Text, Nat); // canister id, chunkid
     };
 
     //HTTP
@@ -98,6 +94,7 @@ module {
         headers: [HeaderField];
         body: Blob;
         streaming_strategy: ?HttpStreamingStrategy;
+        upgrade : ?Bool;
     };
     public type HttpRequest = {
         method : Text;
@@ -114,7 +111,7 @@ module {
 
     public type HttpStreamingStrategy = {
         #Callback: {
-            callback: query (HttpStreamingCallbackToken) -> async (HttpStreamingCallbackResponse);
+            callback: shared (HttpStreamingCallbackToken) -> async (HttpStreamingCallbackResponse);
             token: HttpStreamingCallbackToken;
         };
     };

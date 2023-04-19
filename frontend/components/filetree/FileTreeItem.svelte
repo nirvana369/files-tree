@@ -1,5 +1,5 @@
 <template>
-  <Column sm={1} md={4} lg={9}><FileTree file={fileTree} /></Column>
+  <Column sm={1} md={4} lg={9}><FileTree file={fileTree} rootId={fileTree.id}/></Column>
   {#if inAction}
     <Column sm={1} md={2} lg={6}><InlineLoading /></Column>
   {:else}
@@ -11,7 +11,8 @@
                                               toogleModal={toogleModal} 
                                               toogleInAction={toogleInAction} 
                                               toogleEnableDownload={toogleEnableDownload}
-                                              fileMap={fileMap}/></Column>
+                                              fileMap={fileMap}
+                                              reload={reloadAction}/></Column>
     {#if enableDownload}
       <Column sm={1} md={2} lg={2} style="padding-top:33px;"><DownloadButton  folder={fileTree} 
                                                                               toogleInAction={toogleInAction}

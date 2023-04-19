@@ -13,12 +13,10 @@
   import { useCanister } from "@connect2ic/svelte";
   import {mergeFileTree,
           getIsFolder, 
-          getFileTreeData, 
           traverseDirectory,
           mergeUInt8Arrays,
-          downloadFile
           } from "../../utils";
-  import { localFileTrees, syncFiles } from "../../stores.js"
+  import { syncFiles } from "../../stores.js"
   import { useConnect } from "@connect2ic/svelte"
   import md5 from 'md5';
   import { Grid, Row, Column, InlineLoading } from "carbon-components-svelte";
@@ -37,6 +35,7 @@
   export let toogleInAction;
   export let toogleEnableDownload;
   export let fileMap;
+  export let reload;
 
   const [fileTreeRegistry] = useCanister("registry")
  
@@ -46,7 +45,7 @@
   async function selectFolder() {
     let fileTree = null;
     try {
-        directoryHandle = await window.showDirectoryPicker();
+        directoryHandle = await window.showDirectoryPicker({ writable: true });
         fileTree = await checkFileTree();
         // document.getElementById("store-button").disabled = false;
       } catch (error) {
@@ -69,13 +68,12 @@
         // save file to localDB ?
       });
       let tmp = await $fileTreeRegistry.verifyFileTree(fileTree);
-      // after verify if data changing -> update fileTree
-      // $localFileTrees = [...$localFileTrees, fileTree];
       console.log("verify done");
       return fileTree;
   }
 
   async function handleSync() {
+    let isNew = folder.id;
     toogleInAction(true);
     toogleEnableDownload(false, folder);
     $syncFiles = [];
@@ -87,6 +85,7 @@
     } catch (e) {
       console.log(e);
     }
+    //   reload();  
     toogleInAction(false);
   }
 
@@ -149,7 +148,6 @@
         }
       });
       toogleModal(false);
-
       console.log("READY TO DOWNLOAD");
       console.log(folder);
       return folder;
@@ -168,7 +166,6 @@
     let chunkId = 0;
     let start = 0;
 
-    await $fileTreeRegistry.removeChunksCache(file.canisterId, file.id);
     let err = 0;
     while (chunkId < totalChunk) {
       start = chunkId * chunkLength;
@@ -208,7 +205,7 @@
       $syncFiles = [...$syncFiles, file.name];
       return;
     }
-    let totalChunk = 1;
+    let totalChunk = file.totalChunk;
     let i = 0;
     let err = 0;
     var chunkData = new Uint8Array();
@@ -218,7 +215,6 @@
         if (syncRet.ok) {
           let chunk = syncRet.ok;
           chunkData = mergeUInt8Arrays(chunkData, chunk.data);
-          totalChunk = chunk.totalChunk;
           i++;
           err = 0;
         } else {
