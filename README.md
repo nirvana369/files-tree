@@ -1,4 +1,4 @@
-# NFT mint app
+# Decentralize FileTrees
 
 **Backend**
 
