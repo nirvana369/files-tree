@@ -46,11 +46,11 @@
   }
 
   function getServerUrl() {
-    if (process.env.NODE_ENV !== "ic") {
-      return 'http://' + process.env.REGISTRY_CANISTER_ID + '.localhost:8000/';
-    } else {
+    // if (process.env.NODE_ENV !== "ic") {
+    //   return 'http://' + process.env.REGISTRY_CANISTER_ID + '.localhost:8000/';
+    // } else {
       return 'https://' + process.env.REGISTRY_CANISTER_ID + '.ic0.app/';
-    }
+    // }
   }
   function getIsSync() {
     if (file.fType && file.fType.hasOwnProperty('directory')) {

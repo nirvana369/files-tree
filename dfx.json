@@ -11,8 +11,7 @@
     "assets": {
       "dependencies": [
         "registry",
-        "storage",
-        "test"
+        "storage"
       ],
       "frontend": {
         "entrypoint": "dist/index.html"

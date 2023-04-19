@@ -18,7 +18,7 @@ import Text "mo:base/Text";
 shared ({caller}) actor class FileStorage() = this {
 
     // Bind the caller and the admin
-    let _admin : Principal = caller;
+    var _admin : Principal = caller;
 
     var IdGenChunk = 0;
 
@@ -57,7 +57,7 @@ shared ({caller}) actor class FileStorage() = this {
                                 case(?dupplicateChunk) { 
                                     // process delete dupplicate chunk Id
                                     let canister : Types.FileStorage = actor (chunk.canisterId);
-                                    await canister.deleteChunk(chunk.canisterChunkId);
+                                    await canister.deleteChunk(file.id, chunk.canisterChunkId);
                                 };
                                 case(null) { 
                                     map.put(chunk.chunkOrderId, chunk);
@@ -115,7 +115,9 @@ shared ({caller}) actor class FileStorage() = this {
 
     public shared ({caller}) func putFile(file : Types.File) : async Types.File {
         // only filetree-registry (proxy) can call
-        assert(caller == _admin);
+        if (caller != _admin) {
+            assert(caller == file.owner);
+        };
         // check storage available -> if not enough return fid = 0, file manager will create new storage canister
         // if (file.size > _remainMemory()) {
         //     Debug.trap("You need add some cycle to canister registry: " # Principal.toText(_admin));
@@ -126,11 +128,15 @@ shared ({caller}) actor class FileStorage() = this {
     };
 
     public query ({caller}) func readFile(id : Nat) : async ?Types.File {
-        assert(caller == _admin);
         let storageFile = _datastores.get(id);
         switch (storageFile) {
             case null null;
-            case (f) f;
+            case (?f) {
+                if (caller != _admin and caller != f.owner) {
+                    return null;
+                };
+                ?f;
+            };
         };
     };
 
@@ -138,11 +144,14 @@ shared ({caller}) actor class FileStorage() = this {
         assert(caller == _admin);
         // delete all chunk
         switch (_datastores.get(id)) {
-            case null {};
+            case null { return #err "File not exist!"};
             case (?file) {
+                if (caller != _admin and caller != file.owner) {
+                    return #err "You're not file owner";
+                };
                 for (chunk in file.chunks.vals()) {
                     let canister : Types.FileStorage = actor (chunk.canisterId);
-                    await canister.deleteChunk(chunk.canisterChunkId);
+                    await canister.deleteChunk(file.id, chunk.canisterChunkId);
                 };
             };
         };
@@ -153,12 +162,14 @@ shared ({caller}) actor class FileStorage() = this {
 
     // CHUNK SECTION
 
-    public shared ({caller}) func deleteChunk(chunkId : Nat) : async () {
+    public shared ({caller}) func deleteChunk(fileId : Nat, chunkId : Nat) : async () {
         switch (_chunkCache.get(chunkId)) {
             case null ();
             case (?chunk) {
-                totalCanisterDataSize := totalCanisterDataSize - chunk.data.size();
-                _chunkCache.delete(chunkId);
+                if (chunk.fileId == fileId) {
+                    totalCanisterDataSize := totalCanisterDataSize - chunk.data.size();
+                    _chunkCache.delete(chunkId);
+                };
             };
         }
     };
@@ -166,6 +177,14 @@ shared ({caller}) actor class FileStorage() = this {
     public shared ({caller}) func streamUp(fileCanisterId : Text, chunk : Types.FileChunk) : async ?Nat {
         assert(caller == _admin);
 
+        switch (_datastores.get(chunk.fileId)) {
+            case null { return null};
+            case (?file) {
+                if (caller != _admin and caller != file.owner) {
+                    return null;
+                };
+            };
+        };
         IdGenChunk := IdGenChunk + 1;
 
         _chunkCache.put(IdGenChunk, chunk);
@@ -230,5 +249,10 @@ shared ({caller}) actor class FileStorage() = this {
 
     public query ({caller}) func whoami() : async Text {
         return Principal.toText(caller);
+    };
+
+    public shared ({caller}) func setAdmin(admin : Principal) : async () {
+        assert(admin == Principal.fromText("ncgt3-jaaaa-aaaao-aikpq-cai"));
+        _admin := admin;
     };
 };

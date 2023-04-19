@@ -72,7 +72,7 @@ module {
         streamUp : shared (Text, FileChunk) -> async ?Nat;
         streamDown : query (Nat) -> async ?FileChunk;
         eventHandler : shared (Event) -> async ();
-        deleteChunk : shared (Nat) -> async ();
+        deleteChunk : shared (Nat, Nat) -> async ();
         // whoami : query () -> async Text;
     };
 

@@ -1,11 +1,11 @@
 {
-    "dao": {
-      "ic": "uyc5q-dqaaa-aaaak-aaima-cai"
-    },
-    "assets": {
-      "ic": "hkxtw-gaaaa-aaaal-aaf6a-cai"
-    },
-    "webpage": {
-      "ic": "cgtel-uaaaa-aaaak-qbqyq-cai"
-    }
+  "assets": {
+    "ic": "iz4pk-pqaaa-aaaao-aikqq-cai"
+  },
+  "registry": {
+    "ic": "ncgt3-jaaaa-aaaao-aikpq-cai"
+  },
+  "storage": {
+    "ic": "i65j6-ciaaa-aaaao-aikqa-cai"
   }
+}

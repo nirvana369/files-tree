@@ -11,7 +11,6 @@
    */
   import * as registry from "../.dfx/local/canisters/registry"
   import * as storage from "../.dfx/local/canisters/storage"
-  import * as test from "../.dfx/local/canisters/test"
   /*
    * Some examples to get you started
    */
@@ -22,7 +21,6 @@
 
   const client = createClient({
     canisters: {
-      test,
       registry,
       storage
     },

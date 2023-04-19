@@ -18,10 +18,13 @@ Todo :
 - Auto swap chunks 
 - encrypt chunk
 - UI manage storage
+- RBAC
 
 ## Live Demo in IC Mainnet
 
-https://hkxtw-gaaaa-aaaal-aaf6a-cai.ic0.app/
+https://www.youtube.com/watch?v=UIYshKAJDVk
+
+https://iz4pk-pqaaa-aaaao-aikqq-cai.ic0.app/
 
 ![Screenshot](/frontend/assets/demo.png)
 

@@ -48,13 +48,13 @@ shared ({caller}) actor class FileRegistry() = this {
 
     stable var UserIdGen : Nat = 0;
 
-    stable var _currentDatastoreCanisterId : ?Principal = null;
+    stable var _currentDatastoreCanisterId : ?Principal = ?Principal.fromText("i65j6-ciaaa-aaaao-aikqa-cai");
     stable var _stableDatastoreCanisterIds : [Principal] = [];
     stable var _stableFileTreeRegistry : [(Principal, [Nat])] = [];
     stable var _stableFileTreeStorage : [(Nat, Types.FileTree)] = [];
     stable var _stableUserIdRegistry : [(Principal, Nat)] = [];
 
-    var _dataStoreCanister : ?Types.FileStorage = null;
+    var _dataStoreCanister : ?Types.FileStorage = ?actor("i65j6-ciaaa-aaaao-aikqa-cai");
     var _datastoreCanisterIds = List.fromArray(_stableDatastoreCanisterIds);
 
     let _fileTreeStorage : HashMap.HashMap<Nat, Types.FileTree> = HashMap.fromIter<Nat, Types.FileTree>(_stableFileTreeStorage.vals(), 10, Nat.equal, Hash.hash);
