@@ -87,11 +87,9 @@ Canister configurations are stored in dfx.json.
 
 Backend code is inside /canisters/ written in [Motoko language](https://internetcomputer.org/docs/current/motoko/main/motoko). Motoko is a type-safe language with modern language features like async/await and actor build-in. It also has [Orthogonal persistence](https://internetcomputer.org/docs/current/motoko/main/motoko/#orthogonal-persistence) which I find very interesting.
 
-Backend structure 
-FileTree
-    |----File     
-           |----Chunks
-           
+
+![Backend structure](/frontend/assets/backend-structure.png)
+
 FileManager to manage & control a file-tree
 
 Chunks of 1 file may be not store at the same canister, storage canister may communicate with others using the event bus - send event cross canister to perform some action like delete/update event asynchronously.
@@ -100,18 +98,7 @@ Chunks of 1 file may be not store at the same canister, storage canister may com
 
 Frontend code - components structure :
 
--utils
--store
--main
-    |--App
-        |---HowToUse
-        |---LoginButton
-        |---FileTreeExplorer
-                |----FileTreeItem
-                        |----FileTree
-                        |----SyncButton
-                        |----DeleteButton
-                        |----DownloadButton
+![Frontend structure](/frontend/assets/frontend-structure.png)
 
 Project use [carbon-components-svelte](https://carbon-components-svelte.onrender.com/) framework.
 
