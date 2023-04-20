@@ -118,7 +118,18 @@ Follow the [Create a new cycles wallet](https://internetcomputer.org/docs/curren
 Deploy command :
 
 ```bash
-dfx deploy --network ic
+dfx deploy --network ic --argument '(vec{principal "ncgt3-jaaaa-aaaao-aikpq-cai"}, vec {principal "i65j6-ciaaa-aaaao-aikqa-cai"})'
+```
+When you deploy with argument, this params use when deploy storage canister, params is 2 principal arrays, the 1st params is admin list, 2nd is storage list.
+
+Or you can pass 2 empty arrays, then add admin or storage later by call funtions supported in registry canister, after you call function to add admin/storage,
+registry canister will notify all storages to update admin/storage list :
+```bash
+dfx deploy --network ic --argument '(vec{}, vec {})'
+
+dfx canister call registry addAdmin --network ic '(principal "ncgt3-jaaaa-aaaao-aikpq-cai")'
+dfx canister call registry addStorage --network ic '(principal "i65j6-ciaaa-aaaao-aikqa-cai")'
+
 ```
 
 Open Chrome and go to https://[canisterId].raw.ic0.app/  

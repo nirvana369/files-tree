@@ -6,6 +6,8 @@ import HashMap "mo:base/HashMap";
 import Deque "mo:base/Deque";
 import Array "mo:base/Array";
 import Buffer "mo:base/Buffer";
+import Iter "mo:base/Iter";
+
 
 module {
     public type ProfilerCanister = actor {
@@ -29,10 +31,10 @@ module {
     public class Profiler(name : Text) = this {
         // let canister : ProfilerCanister = actor (canisterId);
         var queue = Deque.empty<Profile>();
-        let res = Buffer.Buffer<ProfileResult>(1);
+        let res = Buffer.Buffer<(Text, ProfileResult)>(1);
 
         func pushProfile() : async () {
-            let map : HashMap.HashMap<Text, ProfileResult> = HashMap.HashMap(0, Text.equal, Text.hash);
+            let map : HashMap.HashMap<Text, ProfileResult> = HashMap.fromIter(res.vals(), 0, Text.equal, Text.hash);
             while (not Deque.isEmpty(queue)) {
                 let item = Deque.popFront(queue);
                 switch (item) {
@@ -62,7 +64,7 @@ module {
                     };
                 };
             };
-            for (i in map.vals()) {
+            for (i in map.entries()) {
                 res.add(i);
             }
         };
@@ -95,7 +97,9 @@ module {
         };
 
         public func get() : [ProfileResult] {
-            Buffer.toArray(res);
+            Iter.toArray<ProfileResult>(Buffer.map<(Text, ProfileResult), ProfileResult>(res, func (entry) {
+                entry.1;
+            }).vals());
         };
     };
 }
