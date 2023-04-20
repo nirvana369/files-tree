@@ -20,44 +20,13 @@
         Click delete button if you want to delete folder & files on-chain.
       </p>
     </AccordionItem>
-    <AccordionItem title="Server Infomation">
-      {#if promiseRegistry != null}
-        {#await promiseRegistry then list}
-            <DataTable
-            headers={[
-              { key: "id", value: "Principal" },
-              { key: "cycle", value: "Cycle available" },
-            ]}
-            rows={list}
-          />
-        {/await}
-      {/if}
-      
-    </AccordionItem>
-    <AccordionItem title="Storage Infomation">
-      {#if promiseStorage != null}
-        {#await promiseStorage then list}
-        <DataTable
-          headers={[
-            { key: "id", value: "Principal" },
-            { key: "mem", value: "Memory available" },
-          ]}
-          rows={list}
-        />
-        {/await}
-      {/if}
-    </AccordionItem>
   </Accordion>
 </template>
 
 <script>
   import {  Accordion, 
-            AccordionItem,
-            DataTable} from "carbon-components-svelte";
-  import { useCanister } from "@connect2ic/svelte";
-  const [fileTreeRegistry] = useCanister("registry")
+            AccordionItem} from "carbon-components-svelte";
 
-  let promiseRegistry = $fileTreeRegistry.getServerInfo();
-  let promiseStorage = $fileTreeRegistry.getStorageInfo();
+  
     // console.log(process.env.NODE_ENV);
 </script>

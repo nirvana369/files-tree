@@ -1,4 +1,6 @@
 import Types "types";
+import RBAC "roles";
+import Profiler "profiler";
 
 import HashMap "mo:base/HashMap";
 import Nat "mo:base/Nat";
@@ -12,13 +14,14 @@ import Debug "mo:base/Debug";
 import Option "mo:base/Option";
 import Time "mo:base/Time";
 import Text "mo:base/Text";
-
+import Iter "mo:base/Iter";
  
 
-shared ({caller}) actor class FileStorage() = this {
+shared ({caller}) actor class FileStorage(_admin : [Principal], _storage : [Principal]) = this {
 
-    // Bind the caller and the admin
-    var _admin : Principal = caller;
+    let profiler = Profiler.Profiler("FileStorage");
+
+    let rm : RBAC.Role = RBAC.init(caller, _admin, _storage);
 
     var IdGenChunk = 0;
 
@@ -32,15 +35,17 @@ shared ({caller}) actor class FileStorage() = this {
 
     var checkFileHash = false;
 
-    // stable var _stableDatastores : [(Nat, FileTree)] = [];
-    // let _datastores = HashMap.fromIter<Nat, FileTree>(_stableDatastores.vals(), 10, Nat.equal, Hash.hash);
-    let _datastores : HashMap.HashMap<Nat, Types.File> = HashMap.HashMap<Nat, Types.File>(10, Nat.equal, Hash.hash);
+    stable var _stableDatastores : [(Nat, Types.File)] = [];
+    stable var _stableChunks : [(Nat, Types.FileChunk)] = [];
 
-    let _chunkCache : HashMap.HashMap<Nat, Types.FileChunk> = HashMap.HashMap<Nat, Types.FileChunk>(10, Nat.equal, Hash.hash);
+    let _datastores : HashMap.HashMap<Nat, Types.File> = HashMap.fromIter<Nat, Types.File>(_stableDatastores.vals(), 10, Nat.equal, Hash.hash);
+
+    let _chunkData : HashMap.HashMap<Nat, Types.FileChunk> = HashMap.fromIter<Nat, Types.FileChunk>(_stableChunks.vals(), 10, Nat.equal, Hash.hash);
 
     // EVENT BUS SECTION - Cross canister notify & handle event (process oneway message)
 
     private func _updateFileChunk(fileId : Nat, chunkInfo: Types.ChunkInfo) : async () {
+        let p = profiler.push("_updateFileChunk");
         switch (_datastores.get(fileId)) {
             case(null) {}; // file not registered
             case(?file) { 
@@ -74,7 +79,9 @@ shared ({caller}) actor class FileStorage() = this {
                         };
                         state := #ready;
                         // notify to file manager
-                         await notify(Principal.toText(_admin), (#UpdateFileState (file.rootId, file.id)));
+                        await rm.asynIterAdmins(func (admin : Principal) : async() {
+                            await notify(Principal.toText(admin), (#UpdateFileState (file.rootId, file.id)));
+                        });
                     };
                     
                 };
@@ -93,60 +100,87 @@ shared ({caller}) actor class FileStorage() = this {
                 _datastores.put(fileId, ftmp);
             };
         };
+        profiler.pop(p);
     };
 
     public shared ({caller}) func eventHandler(event : Types.Event) : async () {
+        let p = profiler.push("eventHandler");
+        if (not _validCaller(caller)) {
+            return;
+        };
         switch(event) {
             case(#StreamUpChunk (fileId, chunkInfo)) { 
                 await _updateFileChunk(fileId, chunkInfo);
+            };
+            case(#SyncRole(roles : [(Principal, Types.Roles)])) {
+                for (r in roles.vals()) {
+                    switch(r.1) {
+                        case (#admin) rm.addAdmin(r.0);
+                        case (#superadmin) rm.setSuperAdmin(r.0);
+                        case (#storage) rm.addStorage(r.0);
+                        case (_) {};
+                    };
+                };
             };
             case (_) {
                 // not process if receive
                 // monitor number wrong call
             };
         };
+        profiler.pop(p);
     };
 
     private func notify(canisterId : Text, e : Types.Event) : async () {
+        let p = profiler.push("notify." # canisterId);
+
         let registry : Types.EventBus = actor (canisterId);
-        ignore registry.eventHandler(e);
+        await registry.eventHandler(e);
+
+        profiler.pop(p);
     };
     // FILE STORAGE SECTION : CRUD function
 
-    public shared ({caller}) func putFile(file : Types.File) : async Types.File {
-        // only filetree-registry (proxy) can call
-        if (caller != _admin) {
-            assert(caller == file.owner);
+    public shared ({caller}) func putFile(file : Types.File) : async ?Types.File {
+        if (not _validCaller(caller)) {
+            return null;
         };
+        let p = profiler.push("putFile");
         // check storage available -> if not enough return fid = 0, file manager will create new storage canister
         // if (file.size > _remainMemory()) {
         //     Debug.trap("You need add some cycle to canister registry: " # Principal.toText(_admin));
         // };
         _datastores.put(file.id, file);
         totalCanisterDataSize := totalCanisterDataSize + 1_000; // 1 kB metadata
-        return file;
+
+        profiler.pop(p);
+
+        return ?file;
     };
 
     public query ({caller}) func readFile(id : Nat) : async ?Types.File {
+        let p = profiler.push("readFile");
         let storageFile = _datastores.get(id);
+        
         switch (storageFile) {
             case null null;
             case (?f) {
-                if (caller != _admin and caller != f.owner) {
+                if (not _validCaller(caller) and caller != f.owner) {
                     return null;
                 };
+                profiler.pop(p);
                 ?f;
             };
         };
     };
 
     public shared ({caller}) func deleteFile(id : Nat) : async Result.Result<Nat, Text> {
-        assert(caller == _admin);
         // delete all chunk
+        let p = profiler.push("deleteFile");
+                    
         switch (_datastores.get(id)) {
             case null { return #err "File not exist!"};
             case (?file) {
-                if (caller != _admin and caller != file.owner) {
+                if (not _validCaller(caller) and caller != file.owner) {
                     return #err "You're not file owner";
                 };
                 for (chunk in file.chunks.vals()) {
@@ -157,37 +191,47 @@ shared ({caller}) actor class FileStorage() = this {
         };
         _datastores.delete(id);
         totalCanisterDataSize := totalCanisterDataSize - 1_000; // 1 kB metadata
+        
+        profiler.pop(p);
+
         #ok id;
     };
 
     // CHUNK SECTION
 
     public shared ({caller}) func deleteChunk(fileId : Nat, chunkId : Nat) : async () {
-        switch (_chunkCache.get(chunkId)) {
+        // only admin/ super user/ storages can call this func
+        let p = profiler.push("deleteChunk");
+        if (not _validCaller(caller)) {
+            return;
+        };
+        switch (_chunkData.get(chunkId)) {
             case null ();
             case (?chunk) {
                 if (chunk.fileId == fileId) {
                     totalCanisterDataSize := totalCanisterDataSize - chunk.data.size();
-                    _chunkCache.delete(chunkId);
+                    _chunkData.delete(chunkId);
                 };
             };
-        }
+        };
+        profiler.pop(p);
     };
     
     public shared ({caller}) func streamUp(fileCanisterId : Text, chunk : Types.FileChunk) : async ?Nat {
-        assert(caller == _admin);
+
+        let p = profiler.push("streamUp");
 
         switch (_datastores.get(chunk.fileId)) {
             case null { return null};
             case (?file) {
-                if (caller != _admin and caller != file.owner) {
+                if (not _validCaller(caller) and caller != file.owner) {
                     return null;
                 };
             };
         };
         IdGenChunk := IdGenChunk + 1;
 
-        _chunkCache.put(IdGenChunk, chunk);
+        _chunkData.put(IdGenChunk, chunk);
 
         let chunkInfo : Types.ChunkInfo = {
             canisterChunkId = IdGenChunk;
@@ -195,26 +239,39 @@ shared ({caller}) actor class FileStorage() = this {
             chunkOrderId = chunk.chunkOrderId;
         };
 
-        ignore notify(fileCanisterId, (#StreamUpChunk (chunk.fileId, chunkInfo)));
+        await notify(fileCanisterId, (#StreamUpChunk (chunk.fileId, chunkInfo)));
 
         totalCanisterDataSize := totalCanisterDataSize + chunk.data.size();
+
+        profiler.pop(p);
 
         (?IdGenChunk);
     };
 
     
     public query ({caller}) func streamDown(chunkId : Nat) : async ?Types.FileChunk {
-        assert(caller == _admin);
+        let p = profiler.push("streamDown");
 
-        switch (_chunkCache.get(chunkId)) {
+        if (not _validCaller(caller)) {
+            Debug.trap("Permission invalid");
+        };
+
+        let ret = switch (_chunkData.get(chunkId)) {
             case null null;
             case (chunk) chunk;
-        }
+        };
+        profiler.pop(p);
+
+        ret;
     };
 
     public shared(msg) func getCanisterId() : async Principal {
         let canisterId = Principal.fromActor(this);
         return canisterId;
+    };
+
+    public query func getRoles() : async [(Principal, Types.Roles)] {
+        rm.getRoles();
     };
 
     private func _remainMemory() : Nat {
@@ -229,19 +286,21 @@ shared ({caller}) actor class FileStorage() = this {
         return (DATASTORE_CANISTER_CAPACITY - totalCanisterDataSize) / _numberOfDataPerCanister;
     };
 
-     // The work required before a canister upgrade begins.
-    // system func preupgrade() {
-    //     Debug.print("Starting pre-upgrade hook...");
-    //     _stableDatastores := Iter.toArray(_datastores.entries());
-    //     Debug.print("pre-upgrade finished.");
-    // };
+    //  The work required before a canister upgrade begins.
+    system func preupgrade() {
+        Debug.print("Starting pre-upgrade hook...");
+        _stableDatastores := Iter.toArray(_datastores.entries());
+        _stableChunks := Iter.toArray(_chunkData.entries());
+        Debug.print("pre-upgrade finished.");
+    };
 
-    // // The work required after a canister upgrade ends.
-    // system func postupgrade() {
-    //     Debug.print("Starting post-upgrade hook...");
-    //     _stableDatastores := [];
-    //     Debug.print("post-upgrade finished.");
-    // };
+    // The work required after a canister upgrade ends.
+    system func postupgrade() {
+        Debug.print("Starting post-upgrade hook...");
+        _stableDatastores := [];
+        _stableChunks := [];
+        Debug.print("post-upgrade finished.");
+    };
 
     public shared ({caller}) func changeChunkSize(size : Nat) : async () {
         CHUNK_SIZE := size;
@@ -251,8 +310,14 @@ shared ({caller}) actor class FileStorage() = this {
         return Principal.toText(caller);
     };
 
-    public shared ({caller}) func setAdmin(admin : Principal) : async () {
-        assert(admin == Principal.fromText("ncgt3-jaaaa-aaaao-aikpq-cai"));
-        _admin := admin;
+    private func _validCaller(caller : Principal) : Bool {
+        switch (rm.verify(caller)) {
+            case (null or ?#anonymous or ?#user) return false;
+            case (_) return true;
+        };
     };
+
+    public func getProfiler() : async [Profiler.ProfileResult] {
+        profiler.get();
+    }
 };

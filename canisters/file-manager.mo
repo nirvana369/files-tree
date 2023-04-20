@@ -427,10 +427,11 @@ module {
             obj.totalChunk;
         };
 
-        public func registerFile(storageCanisterId : Principal, fileTreeId : Nat, fileId : Nat, owner : Principal) : async () {
+        public func registerFile(storageCanisterId : Principal, fileTreeId : Nat, fileId : Nat, owner : Principal) : async ?Types.File {
             if (obj.fType == #file and (obj.id == 0 or obj.canisterId == "")) {
                 await putFile(storageCanisterId, fileTreeId, fileId, owner);
             };
+            null;
         };
 
         public func getFile(isSync : Bool) : async ?Types.File {
@@ -476,9 +477,14 @@ module {
                     };
             let storageCanister : Types.FileStorage = actor(Principal.toText(storageCanisterId));
             let registeredFile = await storageCanister.putFile(file);
-            obj.id := registeredFile.id;
-            obj.canisterId := Principal.toText(storageCanisterId);
-            obj.state := registeredFile.state;
+            switch(registeredFile) {
+                case(?f) {  
+                    obj.id := f.id;
+                    obj.canisterId := Principal.toText(storageCanisterId);
+                    obj.state := f.state;
+                };
+                case(null) { };
+            };
         };
 
         public func _assertFile() {

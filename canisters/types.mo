@@ -62,8 +62,8 @@ module {
         data : [Nat8];
     };
 
-    public type FileStorage = actor {
-        putFile : shared (file : File) -> async File;
+    public type FileStorage = actor  {
+        putFile : shared (file : File) -> async ?File;
         getCanisterFilesAvailable : shared () -> async Nat;
         getCanisterMemoryAvailable : shared () -> async Nat;
         // getCanisterId : shared () -> async Principal;
@@ -81,10 +81,21 @@ module {
     };
 
     public type Event = {
+        // event control file & chunk state
         #StreamUpChunk : (Nat, ChunkInfo);      //  #UpdateFileState(FileId, ChunkId, ChunkCanister, ChunkOrderId); -> update chunk info to file metadata
         #UpdateFileState : (Nat, Nat);   //  #UpdateFileTreeState(FileTreeId, FileId); -> update state file to ready
         #SyncCache : (Text, Nat);  // sync cache file id, chunk id - speed up streaming
         #DeleteChunk : (Text, Nat); // canister id, chunkid
+        // event control roles
+        #SyncRole : [(Principal, Roles)];
+    };
+
+    public type Roles = {
+        #superadmin; // level 1
+        #admin;      // 2
+        #storage;    // 3
+        #user;       // 4
+        #anonymous;  // 5
     };
 
     //HTTP

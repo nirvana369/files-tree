@@ -10,15 +10,6 @@
 
 - Use Svelt template, display user's storage account, manage file-trees upload/download file, sync with local folder, delete file-trees
 
-Todo :
-- Change to use local db to store downloaded chunks (memory problem when hold big file size on mem)
-- Update UI for move/merge folder (funtional already)
-- Monitor performance & log/qos system
-- Fix err ERR_INCOMPLETE_CHUNKED_ENCODING 200 (OK) when serve chunks http post
-- Auto swap chunks 
-- encrypt chunk
-- UI manage storage
-- RBAC
 
 ## Live Demo in IC Mainnet
 

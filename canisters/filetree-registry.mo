@@ -2,7 +2,8 @@ import FileStorage "file-storage";
 import ICType "IC";
 import Types "types";
 import FileManager "file-manager";
-
+import RBAC "roles";
+import Profiler "profiler";
 
 import Result "mo:base/Result";
 import Principal "mo:base/Principal";
@@ -24,8 +25,8 @@ import Time "mo:base/Time";
 
 
 shared ({caller}) actor class FileRegistry() = this {
-    // Bind the caller and the admin
-    let _admin : Principal = caller;
+
+    let profiler = Profiler.Profiler("FileRegistry");
 
     let IC : ICType.Self = actor "aaaaa-aa";
 
@@ -48,14 +49,13 @@ shared ({caller}) actor class FileRegistry() = this {
 
     stable var UserIdGen : Nat = 0;
 
-    stable var _currentDatastoreCanisterId : ?Principal = ?Principal.fromText("i65j6-ciaaa-aaaao-aikqa-cai");
+    stable var _currentDatastoreCanisterId : ?Principal = null;
     stable var _stableDatastoreCanisterIds : [Principal] = [];
     stable var _stableFileTreeRegistry : [(Principal, [Nat])] = [];
     stable var _stableFileTreeStorage : [(Nat, Types.FileTree)] = [];
     stable var _stableUserIdRegistry : [(Principal, Nat)] = [];
 
-    var _dataStoreCanister : ?Types.FileStorage = ?actor("i65j6-ciaaa-aaaao-aikqa-cai");
-    var _datastoreCanisterIds = List.fromArray(_stableDatastoreCanisterIds);
+    let rm : RBAC.Role = RBAC.init(caller, [], _stableDatastoreCanisterIds);
 
     let _fileTreeStorage : HashMap.HashMap<Nat, Types.FileTree> = HashMap.fromIter<Nat, Types.FileTree>(_stableFileTreeStorage.vals(), 10, Nat.equal, Hash.hash);
     let _fileTreeRegistry : HashMap.HashMap<Principal, [Nat]> = HashMap.fromIter<Principal, [Nat]>(_stableFileTreeRegistry.vals(), 10, Principal.equal, Principal.hash);
@@ -63,12 +63,20 @@ shared ({caller}) actor class FileRegistry() = this {
 
 
     public shared ({caller}) func eventHandler(event : Types.Event) : async () {
+        let p = profiler.push("eventHandler");
         // verify caller is storage canister -> only storage canister can handle this event message
+        switch (rm.verify(caller)) {
+            case(null or ?#anonymous or ?#user) { return };
+            case (_) {};
+        };
         switch(event) {
             case(#UpdateFileState (fileTreeId, fileId)) {
+                let p = profiler.push("eventHandler.UpdateFileState");
                 _updateFileState(fileTreeId, fileId, #ready);
+                profiler.pop(p);
             };
             case(#SyncCache(fileHash, chunkId)) {
+                let p = profiler.push("eventHandler.SyncCache");
                 //get file
                 // get chunk
                 // put cache
@@ -95,15 +103,17 @@ shared ({caller}) actor class FileRegistry() = this {
                         };
                     }
                 };
-                
+                profiler.pop(p);
             };
             case (_) { };
         };
     };
 
     private func notify(canisterId : Text, e : Types.Event) : async () {
+        let p = profiler.push("notify");
         let registry : Types.EventBus = actor (canisterId);
-        ignore registry.eventHandler(e);
+        await registry.eventHandler(e);
+        profiler.pop(p);
     };
 
     private func _createFileId() : Nat {
@@ -117,22 +127,39 @@ shared ({caller}) actor class FileRegistry() = this {
     };
 
     public shared ({caller}) func createFileTree(fileTree : Types.FileTree) : async Result.Result<Types.FileTree, Text> {
+        let p = profiler.push("createFileTree");
+
+        switch(rm.verify(caller)) {
+            case (?#anonymous) return #err "Permission invalid";
+            case (_) {};
+        };
         let fileManager = FileManager.init(fileTree);
         IdGen := IdGen + 1;
         fileManager.setRootId(IdGen);
 
         // trap if not enough cycles
         let (storageCanisterId, storageCanister) = await _getCurrentDataStorage();
-
+        var fileCreateFailed = 0;
         await fileManager.asyncIterFiles(func (file : FileManager.FileTree) : async () {
-            await file.registerFile(storageCanisterId, IdGen, _createFileId(), caller);
+            let ret = await file.registerFile(storageCanisterId, IdGen, _createFileId(), caller);
+            switch(ret) {
+                case null {fileCreateFailed += 1};
+                case (?file) {};
+            }
         });
         
         let imutableFileTree = fileManager.freeze();
 
         _putRegistry(caller, fileManager.getRootId());
         _putFileTree(fileManager.getRootId(), imutableFileTree);
+        
+        profiler.pop(p);
 
+        if (fileCreateFailed > 0) {
+            // monitor this case
+            let p = profiler.push("createFileTree.createFileFailed");
+            profiler.pop(p);
+        };
         #ok(imutableFileTree);
     };
 
@@ -144,21 +171,30 @@ shared ({caller}) actor class FileRegistry() = this {
     };
 
     private func _verifyOwner(caller : Principal, id : Nat) : ?Types.FileTree {
-        switch(_fileTreeRegistry.get(caller)) {
-            case(?listId) {
-                switch (Array.find<Nat>(listId, func x = x == id)) {
-                    case null null;
-                    case (?id) _fileTreeStorage.get(id);
+        switch(rm.verify(caller)) {
+            case (?#superadmin or ?#admin or ?#storage) {
+                _fileTreeStorage.get(id);
+            };
+            case (_) {
+                switch(_fileTreeRegistry.get(caller)) {
+                    case(?listId) {
+                        switch (Array.find<Nat>(listId, func x = x == id)) {
+                            case null null;
+                            case (?id) _fileTreeStorage.get(id);
+                        };
+                    };
+                    case(null) { null};
                 };
             };
-            case(null) { null};
         };
+        
     };
 
     public shared ({caller}) func updateFileTree(fileTree : Types.FileTree) : async Result.Result<Types.FileTree, Text> {
+        let p = profiler.push("updateFileTree");
         // read file tree 
         let fTree = switch (_verifyOwner(caller, fileTree.id)) {
-            case null return #err "File tree id is empty!";
+            case null return #err "Permission invalid!";
             case (?tree) {
                 tree;
             };
@@ -171,7 +207,11 @@ shared ({caller}) actor class FileRegistry() = this {
             _validate(f.get());
             if (f.getId() <= 0) {
                 let (storageCanisterId, storageCanister) = await _getCurrentDataStorage();
-                await f.registerFile(storageCanisterId, fTreeId, _createFileId(), caller);
+                let ret = await f.registerFile(storageCanisterId, fTreeId, _createFileId(), caller);
+                switch(ret) {
+                    case null return #err ("Register file failed: " # Nat.toText(f.getId()));
+                    case (?file) {};
+                }
             } else {
                 let ret = await f.getFile(false);
                 switch (ret) {
@@ -187,13 +227,17 @@ shared ({caller}) actor class FileRegistry() = this {
         // return result for client -> client call canister file storage by canister id + id file to upload direct
         _putFileTree(fTreeId, imutableFileTree);
 
+        profiler.pop(p);
+
         #ok(imutableFileTree);
     };
 
 
     public shared ({caller}) func deleteFileTree(id : Nat) : async Result.Result<Nat, Text> {
+        let p = profiler.push("deleteFileTree");
+
         let fTreeId = switch (_verifyOwner(caller, id)) {
-            case null return #err "File tree id is empty!";
+            case null return #err "Permission invalid!";
             case (?id) {
                 id;
             };
@@ -210,6 +254,9 @@ shared ({caller}) actor class FileRegistry() = this {
                 _fileTreeStorage.delete(id);
 
                 _removeRegistry(caller, id);
+                
+                profiler.pop(p);
+
                 #ok id;
             };
         };
@@ -217,8 +264,10 @@ shared ({caller}) actor class FileRegistry() = this {
 
     // move a file/folder A to folder B
     public shared ({caller}) func moveFile(fileTreeId: Nat, pathA : Text, pathB : Text) : async Result.Result<Types.FileTree, Text> {
+        let p = profiler.push("moveFile");
+
         let fTree = switch (_verifyOwner(caller, fileTreeId)) {
-            case null return #err "File tree are not exist!";
+            case null return #err "Permission invalid!";
             case (?tree) {
                 let fileManager = FileManager.init(tree);
 
@@ -228,37 +277,46 @@ shared ({caller}) actor class FileRegistry() = this {
 
                 _putFileTree(fileTreeId, immutableFileTree);
                 
+                profiler.pop(p);
+
                 #ok (immutableFileTree);
             };
         };
     };
 
     public query ({caller}) func getFileTree(id : Nat) : async Result.Result<Types.FileTree, Text> {
+        let p = profiler.push("getFileTree");
         let fTree = switch (_verifyOwner(caller, id)) {
-            case null return #err "File tree are not exist!";
+            case null return #err "Permission invalid!";
             case (?tree) {
+                profiler.pop(p);
+
                 #ok (tree);
             };
         };
     };
 
     public query ({caller}) func getListFileTree() : async Result.Result<[Types.FileTree], Text> {
+        let p = profiler.push("getListFileTree");
         switch (_fileTreeRegistry.get(caller)) {
             case null {
-                #err "Your file tree is empty!";
+                #err "Permission invalid!";
             };
             case (?arr) {
                 let fTree = Array.mapFilter<Nat, Types.FileTree>(arr, func(id) {
                     _getFileTree(id);
                 });
+                profiler.pop(p);
                 #ok fTree;
             };
         };
     };
 
     public shared ({caller}) func streamUpFile(fileTreeId : Nat, fileId : Nat, fchunk : Types.FileChunk) : async Result.Result<Nat, Text> {
+        let p = profiler.push("streamUpFile");
+
         let fileTree = switch (_verifyOwner(caller, fileTreeId)) {
-            case null return #err "File not exist";
+            case null return #err "Permission invalid!";
             case (?ft) ft;
         };
         let fileManager = FileManager.init(fileTree);
@@ -274,6 +332,8 @@ shared ({caller}) actor class FileRegistry() = this {
         let (storageCanisterId, storageCanister) = await _getCurrentDataStorage();
         // after put chunk, storage canister will notify to file storage canister to update file state
         let ret = await storageCanister.streamUp(file.getCanisterId(), fchunk);
+        profiler.pop(p);
+
         switch(ret) {
             case null #err "Stream up chunk data failed";
             case (?canisterChunkId) #ok canisterChunkId;
@@ -281,8 +341,10 @@ shared ({caller}) actor class FileRegistry() = this {
     };
     
     public shared ({caller}) func streamDownFile(fileTreeId : Nat, fileId : Nat, chunkId : Nat) : async Result.Result<Types.FileChunk, Text> {
+        let p = profiler.push("streamDownFile");
+
         let fileTree = switch (_verifyOwner(caller, fileTreeId)) {
-            case null return #err "File not exist";
+            case null return #err "Permission invalid!";
             case (?ft) ft;
         };
         let fileManager = FileManager.init(fileTree);
@@ -293,7 +355,7 @@ shared ({caller}) actor class FileRegistry() = this {
                 file;
             };
         };
-
+        profiler.pop(p);
         await file.getChunk(chunkId, false);
     };
 
@@ -331,7 +393,7 @@ shared ({caller}) actor class FileRegistry() = this {
     };
 
     private func checkStorageAvailable() : async ?Principal {
-        for (canisterId in List.toIter<Principal>(_datastoreCanisterIds)) {
+        for (canisterId in rm.getStorages().vals()) {
             let canister : Types.FileStorage = actor(Principal.toText(canisterId));
             let filesAvailable = await canister.getCanisterFilesAvailable();
             let memAvailable = await canister.getCanisterMemoryAvailable();
@@ -345,13 +407,13 @@ shared ({caller}) actor class FileRegistry() = this {
         };
     };
 
-    public shared ({caller}) func getStorageInfo() : async [{id:Text; mem: Text}] {
+    public shared func getStorageInfo() : async [{id:Text; mem: Text}] {
         let buf = Buffer.Buffer<{id: Text; mem : Text;}>(1);
-        for (canisterId in List.toIter<Principal>(_datastoreCanisterIds)) {
-            let canister : Types.FileStorage = actor(Principal.toText(canisterId));
+        await rm.asynIterStorages(func (s : Principal) : async () {
+            let canister : Types.FileStorage = actor(Principal.toText(s));
             let memAvailable = await canister.getCanisterMemoryAvailable();
-            buf.add({id = Principal.toText(canisterId); mem = Nat.toText(memAvailable);});
-        };
+            buf.add({id = Principal.toText(s); mem = Nat.toText(memAvailable);});
+        });
         Buffer.toArray(buf);
     };
 
@@ -360,23 +422,31 @@ shared ({caller}) actor class FileRegistry() = this {
     };
 
     private func _generateFileStorage() : async Result.Result<Principal,Text>{
+        let p = profiler.push("_generateFileStorage");
         try {
+            rm.addAdmin(Principal.fromActor(this));
             Cycles.add(4_000_000_000_000);
-            let fileStorageCanister = await FileStorage.FileStorage();
+            let fileStorageCanister = await FileStorage.FileStorage(rm.getAdmins(), rm.getStorages());
             let canisterId = Principal.fromActor(fileStorageCanister);
 
             _currentDatastoreCanisterId := ?canisterId;
-            _dataStoreCanister := ?fileStorageCanister;
-            _datastoreCanisterIds := List.push(canisterId, _datastoreCanisterIds);
+            rm.addStorage(canisterId);
 
             let settings: ICType.CanisterSettings = { 
-                controllers = [_admin, Principal.fromActor(this)];
+                controllers = rm.getAdmins();
             };
             let params: ICType.UpdateSettings = {
                 canister_id = canisterId;
                 settings = settings;
             };
             await IC.update_settings(params);
+
+            
+            // notify all storage add new storage
+            await rm.asynIterStorages(func (s : Principal) : async () {
+                await notify(Principal.toText(s), #SyncRole(rm.getRoles()));
+            });
+            profiler.pop(p);
 
             #ok (canisterId);
         } catch (e) {
@@ -434,11 +504,39 @@ shared ({caller}) actor class FileRegistry() = this {
         return canisterId;
     };
 
+    public shared ({caller}) func addAdmin(p : Principal) {
+        switch (rm.verify(caller)) {
+            case (?#admin or ?#superadmin) {
+                rm.addAdmin(p);
+                await rm.asynIterStorages(func (s : Principal) : async () {
+                    await notify(Principal.toText(s), #SyncRole(rm.getRoles()));
+                });
+            };
+            case (_) {
+                Debug.trap("Permission invalid!");
+            };
+        };
+    };
+
+    public shared ({caller}) func addStorage(p : Principal) {
+        switch (rm.verify(caller)) {
+            case (?#admin or ?#superadmin) {
+                rm.addStorage(p);
+                await rm.asynIterStorages(func (s : Principal) : async () {
+                    await notify(Principal.toText(s), #SyncRole(rm.getRoles()));
+                });
+            };
+            case (_) {
+                Debug.trap("Permission invalid!");
+            };
+        };
+    };
+
     // The work required before a canister upgrade begins.
     system func preupgrade() {
         // Debug.print("Starting pre-upgrade hook...");
         // _stableUsers := Iter.toArray(_users.entries());
-        _stableDatastoreCanisterIds := List.toArray(_datastoreCanisterIds);
+        _stableDatastoreCanisterIds := rm.getStorages();
         _stableFileTreeRegistry := Iter.toArray(_fileTreeRegistry.entries());
         _stableFileTreeStorage := Iter.toArray(_fileTreeStorage.entries());
         // Debug.print("pre-upgrade finished.");
@@ -456,6 +554,10 @@ shared ({caller}) actor class FileRegistry() = this {
 
     public query ({caller}) func whoami() : async Text {
         return Principal.toText(caller);
+    };
+
+    public query func getRoles() : async [(Principal, Types.Roles)] {
+        rm.getRoles();
     };
 
     // Http 
@@ -514,8 +616,14 @@ shared ({caller}) actor class FileRegistry() = this {
     };
 
     public query func http_request(request : Types.HttpRequest) : async Types.HttpResponse {
+        let p = profiler.push("http_request");
         let path = Buffer.fromIter<Text>(Text.tokens(request.url, #text("/")));
-        let fHash = Buffer.fromIter<Text>(Text.tokens(path.get(path.size() - 1), #text("?"))).get(0);
+        let buf = Buffer.fromIter<Text>(Text.tokens(path.get(path.size() - 1), #text("?")));
+        let fHash = if (buf.size() > 1) {
+            buf.get(0);
+        } else {
+            path.get(path.size() - 1);
+        };
         let fTreeId = _textToNat(path.get(path.size() - 2));
         let owner = path.get(path.size() - 3);
         let chunkId = switch(_getParam(request.url, "chunkId")) {
@@ -539,7 +647,9 @@ shared ({caller}) actor class FileRegistry() = this {
                 // return await _processFile(f, chunkId);
             };
         };
-        {
+        profiler.pop(p);
+
+        return {
             upgrade = ?true;
             status_code = 200;
             headers = [("content-type", "text/plain")];
@@ -560,12 +670,16 @@ shared ({caller}) actor class FileRegistry() = this {
             _streamCache.delete(_keyStreamCache(fileHash, chunk.chunkOrderId - 1));
         };
         if (chunk.chunkOrderId + 1 == totalChunk) {
+            let p = profiler.push("_streamContent.lastChunk");
             // remove all cache
             _streamCache.delete(fileHash);
+            profiler.pop(p);
             return (payload, null);
             
         };
-        ignore notify(Principal.toText(Principal.fromActor(this)), (#SyncCache(fileHash, chunk.chunkOrderId + 1)));
+        let p = profiler.push("_streamContent");
+
+        await notify(Principal.toText(Principal.fromActor(this)), (#SyncCache(fileHash, chunk.chunkOrderId + 1)));
 
         let token = ?{
             content_encoding = "gzip";
@@ -573,6 +687,7 @@ shared ({caller}) actor class FileRegistry() = this {
             sha256 = null;
             key = fileHash;
         };
+        profiler.pop(p);
         return (payload, token);
     };
 
@@ -600,8 +715,9 @@ shared ({caller}) actor class FileRegistry() = this {
     };
 
     private func _processFile(fm : FileManager.FileTree, chunkId : Nat) : async Types.HttpResponse {
+        let p = profiler.push("_processFile");
         // if cache has chunk by hash & chunk id
-        switch (_streamCache.get(_keyStreamCache(fm.getFileHash(), chunkId))) {
+        let ret = switch (_streamCache.get(_keyStreamCache(fm.getFileHash(), chunkId))) {
             case null {
                 let chunkRet = await fm.getChunk(chunkId, false);
                 switch (chunkRet) {
@@ -617,10 +733,13 @@ shared ({caller}) actor class FileRegistry() = this {
                 await _makeStreamingHttpResponse(await _streamContent(fm.getFileHash(), chunk, fm.getTotalChunk()));
             };
         };
-        
+        profiler.pop(p);
+        ret;
     };
 
     public shared func http_request_update(request : Types.HttpRequest) : async Types.HttpResponse {
+        let p = profiler.push("http_request_update");
+
         let path = Buffer.fromIter<Text>(Text.tokens(request.url, #text("/")));
         let fHash = Buffer.fromIter<Text>(Text.tokens(path.get(path.size() - 1), #text("?"))).get(0);
         let fTreeId = _textToNat(path.get(path.size() - 2));
@@ -643,6 +762,7 @@ shared ({caller}) actor class FileRegistry() = this {
                     chunkOrderId = 0;
                     data = [];
                 });
+                profiler.pop(p);
                 return await _processFile(f, chunkId);
             };
         };
@@ -711,4 +831,8 @@ shared ({caller}) actor class FileRegistry() = this {
         });
         return t;
     };
+
+    public func getProfiler() : async [Profiler.ProfileResult] {
+        profiler.get();
+    }
 };

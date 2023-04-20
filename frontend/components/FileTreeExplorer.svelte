@@ -16,12 +16,14 @@
             ListItem, 
             Button,
             Loading,
+            Tabs, Tab, TabContent
              } from "carbon-components-svelte";
   import {
     Header,
     HeaderNav,
     HeaderUtilities,
   } from "carbon-components-svelte";
+    import ProfilerBoard from "./monitor/ProfilerBoard.svelte"
 
   const { principal } = useConnect({
     onConnect: () => {
@@ -153,26 +155,38 @@
       </HeaderUtilities>
     </Header>
     
-    <HowToUse/>
+    
+    <Tabs style="padding-top: 50px;">
+      <Tab label="Home" />
+      <Tab label="File Registry Canister" />
+      <Tab label="File Storage Canister" />
+      <Tab label="How to use" />
+      <svelte:fragment slot="content">
+        <TabContent><Grid fullWidth style="padding-top: 50px;">
+          {#if promise != null}
+            {#await promise then list}
+              {#each list as f}
+                <Row padding style="border: 1px solid white;border-radius: 10px;padding;margin-top: 5px;">
+                  <FileTreeItem fileTree={f} 
+                                directoryHandle={directoryHandlePointer[f.name]} 
+                                toogleModal={toogleSyncModal} 
+                                reloadAction={reload}
+                                fileMap={fileMapPointer[f.name] ? fileMapPointer[f.name] : {}}/>
+                </Row>
+              {/each}
+            {/await}
+          {:else}
+              <Loading/>
+          {/if}
+            
+        </Grid></TabContent>
+        <TabContent><ProfilerBoard type={1}/></TabContent>
+        <TabContent><ProfilerBoard type={0}/></TabContent>
+        <TabContent><HowToUse/></TabContent>
+      </svelte:fragment>
+    </Tabs>
 
-    <Grid fullWidth style="padding-top: 50px;">
-      {#if promise != null}
-        {#await promise then list}
-          {#each list as f}
-          <Row padding style="border: 1px solid white;border-radius: 10px;padding;margin-top: 5px;">
-            <FileTreeItem fileTree={f} 
-                          directoryHandle={directoryHandlePointer[f.name]} 
-                          toogleModal={toogleSyncModal} 
-                          reloadAction={reload}
-                          fileMap={fileMapPointer[f.name] ? fileMapPointer[f.name] : {}}/>
-          </Row>
-          {/each}
-        {/await}
-      {:else}
-          <Loading/>
-      {/if}
-        
-    </Grid>
+    
     
   
     <Modal 
