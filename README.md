@@ -62,10 +62,15 @@ dfx start --background
 
 Note: If you run it in MacOS, you may be asked to allow connections from dfx local server.
 
-Enter the commands to install dependencies, deploy canister and run client:
+Enter the commands to install dependencies, deploy canister and run client (you need collect 2 ids of storage and registry canister because deploy command need them as params):
 
 ```bash
 npm install
+
+dfx canister id storage
+dfx canister id registry
+dfx deploy --argument '(vec{principal "registry-canister-id"}, vec {principal "storage-canister-id"})'
+
 dfx deploy
 npm run dev
 ```
@@ -123,10 +128,9 @@ dfx canister id registry
 
 Put both canister id :
 ```bash
-dfx deploy --argument '(vec{principal "registry-canister-id"}, vec {principal "storage-canister-id"})'
+dfx deploy registry
+dfx deploy storage --argument '(vec{principal "registry-canister-id"}, vec {principal "storage-canister-id"})'
 ```
-
-Or another way :
 
 ```bash
 dfx deploy --argument '(vec{}, vec {})'
