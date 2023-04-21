@@ -114,9 +114,26 @@ Project use [carbon-components-svelte](https://carbon-components-svelte.onrender
 
 You can deploy it to the local DFX server using:
 
+Get storage and registry canister id :
+
 ```bash
-dfx deploy
+dfx canister id storage
+dfx canister id registry
 ```
+
+Put both canister id :
+```bash
+dfx deploy --argument '(vec{principal "registry-canister-id"}, vec {principal "storage-canister-id"})'
+```
+
+Or another way :
+
+```bash
+dfx deploy --argument '(vec{}, vec {})'
+dfx canister call registry addStorage  '(principal "storage-canister-id")'
+dfx canister call registry addAdmin  '(principal "registry-canister-id")'
+```
+
 
 ## Deploy to IC Network Canister
 
