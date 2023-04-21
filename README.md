@@ -1,8 +1,22 @@
 # Decentralize FileTrees
 
+The DApp supports managing and syncing a file tree from a local folder on your computer to the Internet Computer, a decentralized blockchain infrastructure. You can see a demo here: https://www.youtube.com/watch?v=UIYshKAJDVk or try a live demo as a user, or deploy one app for yourself as a developer. Please read the README.md file for instructions.
+
+This version has several functions:
+
+- Serving file data via HTTP
+- Managing file trees/folders/files
+- Syncing/deleting a local folder to the Internet Computer, syncing and downloading folders from the Internet Computer to the local machine
+- Server info (scaling the backend canister when its wallet has more than 4 T cycles)
+- Backend info (available memory)
+- Profiler dashboard to monitor request calls by actor/action/function name and average processing time (to easily monitor and improve performance for fast UX and communication)
+- You can serve file data by URL path: https://{canister_id}.ic0.app/principal (file owner)/file tree id/file hash?chunkId={0 to total chunk}.
+
+Note that currently, this version stores file data in memory, so the client does not support uploading big file sizes. In the next version, I will support big file sizes and add features such as moving files, merging files, creating new files on the server, mailbox for user-received notifications when the file upload is done and progress of it, and more.
+
 **Backend**
 
-- A simple Decentralize file-trees canister written in Motoko
+Canister written in Motoko
 +   Registry canister : manage/store file-trees
 +   File Storage canister : store file & chunks, auto scale 
 
