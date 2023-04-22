@@ -415,6 +415,10 @@ module {
             obj.hash;
         };
 
+        public func getFileSize() : Nat {
+            obj.size;
+        };
+
         public func getType() : Types.FileType {
             obj.fType;
         };

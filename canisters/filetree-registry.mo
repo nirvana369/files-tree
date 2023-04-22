@@ -586,8 +586,12 @@ shared ({caller}) actor class FileRegistry() = this {
             case null return {body = Blob.fromArray([]); token = null};
             case (?f) f;
         };
+        let p = profiler.push("http_request_streaming_callback." # fileHash # Nat.toText(chunkId));
+        profiler.pop(p);
         switch(_streamCache.get(_keyStreamCache(fileHash, chunkId))){
             case(?chunkCache) {
+                let p = profiler.push("http_request_streaming_callback.cache");
+                profiler.pop(p);
                 let res = await _streamContent(fileHash, chunkCache, file.getTotalChunk());
                 return {
                     body = res.0;
@@ -595,6 +599,8 @@ shared ({caller}) actor class FileRegistry() = this {
                 };
             };
             case null {
+                let p = profiler.push("http_request_streaming_callback.non-cache");
+                profiler.pop(p);
                 // init file tree
                 // find file by hash
                 // get chunk
@@ -696,7 +702,9 @@ shared ({caller}) actor class FileRegistry() = this {
             return {
                 upgrade = ?true;
                 status_code = 200;
-                headers = [/*("Content-Type", asset.ctype), ("cache-control", "public, max-age=15552000")*/ ("Transfer-Encoding", "gzip")];
+                headers = [/*("Content-Type", asset.ctype), ("cache-control", "public, max-age=15552000"), ("Content-Length", Nat.toText(contentLength))*/ 
+                ("Transfer-Encoding", "gzip"), ("Access-Control-Allow-Origin", "*")
+                ];
                 body = payload;
                 token = null;
                 streaming_strategy = null;
@@ -705,7 +713,9 @@ shared ({caller}) actor class FileRegistry() = this {
         return {
             upgrade = ?true;
             status_code = 200;
-            headers = [/*("Content-Type", asset.ctype), ("cache-control", "public, max-age=15552000")*/("Transfer-Encoding", "gzip")];
+            headers = [/*("Content-Type", asset.ctype), ("cache-control", "public, max-age=15552000"), ("Content-Length", Nat.toText(contentLength))*/ 
+                ("Transfer-Encoding", "gzip"), ("Access-Control-Allow-Origin", "*")
+                ];
             body = payload;
             streaming_strategy = ?#Callback({
             token = Option.unwrap(token);

@@ -67,9 +67,7 @@ Enter the commands to install dependencies, deploy canister and run client (you 
 ```bash
 npm install
 
-dfx canister id storage
-dfx canister id registry
-dfx deploy --argument '(vec{principal "registry-canister-id"}, vec {principal "storage-canister-id"})'
+dfx deploy --argument '(vec{}, vec {})'
 
 dfx deploy
 npm run dev
@@ -115,21 +113,19 @@ Frontend code - components structure :
 
 Project use [carbon-components-svelte](https://carbon-components-svelte.onrender.com/) framework.
 
+Deploy frontend to the local DFX server using:
+```bash
+dfx deploy assets
+```
+
 ## Backend dev
 
 You can deploy it to the local DFX server using:
 
-Get storage and registry canister id :
-
-```bash
-dfx canister id storage
-dfx canister id registry
-```
-
 Put both canister id :
 ```bash
 dfx deploy registry
-dfx deploy storage --argument '(vec{principal "registry-canister-id"}, vec {principal "storage-canister-id"})'
+dfx deploy storage --argument '(vec{principal "registry-canister-id"}, vec {})'
 ```
 
 ```bash
@@ -156,6 +152,7 @@ Deploy command :
 dfx deploy --network ic --argument '(vec{principal "ncgt3-jaaaa-aaaao-aikpq-cai"}, vec {principal "i65j6-ciaaa-aaaao-aikqa-cai"})'
 ```
 When you deploy with argument, this params use when deploy storage canister, params is 2 principal arrays, the 1st params is admin list, 2nd is storage list.
+(you can replace by your registry canister ids & storage canister ids)
 
 Or you can pass 2 empty arrays, then add admin or storage later by call funtions supported in registry canister, after you call function to add admin/storage,
 registry canister will notify all storages to update admin/storage list :

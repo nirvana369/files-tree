@@ -167,6 +167,7 @@
     let start = 0;
 
     let err = 0;
+    let startTime = new Date().getTime();
     while (chunkId < totalChunk) {
       start = chunkId * chunkLength;
       const c = data.slice(start, start + chunkLength);
@@ -195,6 +196,8 @@
       }
     }
     $syncFiles = [...$syncFiles, file.name];
+    const processTime = new Date().getTime() - startTime;
+    console.log("UPLOAD TIME : " + processTime + " | file : " + file.name);
   }
 
   async function syncDown(fileTreeId, file) {
@@ -209,6 +212,7 @@
     let i = 0;
     let err = 0;
     var chunkData = new Uint8Array();
+    let startTime = new Date().getTime();
     while (i < totalChunk) {
         let syncRet = await $fileTreeRegistry.streamDownFile(fileTreeId, file.id, i);
         console.log(syncRet);
@@ -240,6 +244,8 @@
     var nat8Arr = Array.from(chunkData)    // Uint8Array -> [Nat8]
     let hash = md5(nat8Arr);
     console.log("hash cmp: hash1: " + file.hash + " | hash2:" + hash);
+    const processTime = new Date().getTime() - startTime;
+    console.log("UPLOAD TIME : " + processTime + " | file : " + file.name);
   }
 
   async function recursive(fileTree, callback) {
