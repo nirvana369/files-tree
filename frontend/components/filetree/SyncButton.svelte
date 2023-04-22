@@ -178,7 +178,12 @@
           chunkOrderId : chunkId,
           data : bytes,
       }
-      let syncRet = await $fileTreeRegistry.streamUpFile(fileTreeId, file.id, chunk);
+      let syncRet; 
+      try {
+        syncRet = await $fileTreeRegistry.streamUpFile(fileTreeId, file.id, chunk);
+      } catch (error) {
+        syncRet.err = error;
+      }
       console.log(file.id + " | stream up | " + chunkId);
       console.log(chunk);
       if (syncRet.ok) {
@@ -224,7 +229,12 @@
     var chunkData = new Uint8Array();
     let startTime = new Date().getTime();
     while (i < totalChunk) {
-        let syncRet = await $fileTreeRegistry.streamDownFile(fileTreeId, file.id, i);
+        let syncRet;
+        try {
+          syncRet = await $fileTreeRegistry.streamDownFile(fileTreeId, file.id, i);
+        } catch (error) {
+          syncRet.err = error;
+        }
         console.log(syncRet);
         if (syncRet.ok) {
           let chunk = syncRet.ok;

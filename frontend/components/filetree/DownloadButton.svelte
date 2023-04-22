@@ -23,9 +23,14 @@
     toogleInAction(false);
   }
 
-  async function createFile(fileHandle, content) {
+  async function createFile(fileHandle, content, contentType) {
     // convert [uint8] -> ArrayBuffer -> Blob
-    let blob = new Blob([new Uint8Array(content).buffer]);
+    let blob;
+    if (contentType !== "") {
+        blob = new Blob([new Uint8Array(content).buffer], {type: contentType});
+    } else {
+        blob = new Blob([new Uint8Array(content).buffer]);
+    }
     /**
      * Secure context : fileHandle.createWritable()
      * This feature is available only in secure contexts (HTTPS), in some or all supporting browsers.
@@ -46,7 +51,7 @@
           const data = $filesData[child.hash];
           if (data && data.length > 0) {
             let curFile = await curDir.getFileHandle(child.name, { create: true });
-            createFile(curFile, data);
+            createFile(curFile, data, child.fType.file);
           } else {
             alert("You need sync first!");
           }

@@ -116,7 +116,7 @@ import md5 from 'md5';
           let f = {
             id : 0,
             name : obj.name,
-            fType : {file : null},
+            fType : {file : fileHandle.type},
             canisterId : "",
             hash : hash,
             data : nat8Arr,

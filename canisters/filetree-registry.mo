@@ -90,7 +90,7 @@ shared ({caller}) actor class FileRegistry() = this {
                     case null {};
                     case (?ft) {
                         let fm = FileManager.init(ft);
-                        let file = switch (fm.get(?#file, ?#hash(fileHash))) {
+                        let file = switch (fm.get(?#file(""), ?#hash(fileHash))) {
                             case null {};
                             case (?f) {
                                 switch (await f.getChunk(chunkId, false)) {
@@ -306,7 +306,7 @@ shared ({caller}) actor class FileRegistry() = this {
             case (?ft) ft;
         };
         let fileManager = FileManager.init(fileTree);
-        let file = switch(fileManager.get(?#file, ?#id(fileId))) {
+        let file = switch(fileManager.get(?#file(""), ?#id(fileId))) {
             case null return #err ("File " # Nat.toText(fileId) # " not found");  
             //
             case (?file) {
@@ -334,7 +334,7 @@ shared ({caller}) actor class FileRegistry() = this {
             case (?ft) ft;
         };
         let fileManager = FileManager.init(fileTree);
-        let file = switch(fileManager.get(?#file, ?#id(fileId))) {
+        let file = switch(fileManager.get(?#file(""), ?#id(fileId))) {
             case null return #err ("File " # Nat.toText(fileId) # " not found");  
             //
             case (?file) {
@@ -369,7 +369,7 @@ shared ({caller}) actor class FileRegistry() = this {
             case null {};
             case (?ft) {
                 let fileManager = FileManager.init(ft);
-                fileManager.find(?#file, ?#id(fileId), func (x) {
+                fileManager.find(?#file(""), ?#id(fileId), func (x) {
                         x.state := state;
                 });
                 let imutableFileTree = fileManager.freeze();
@@ -568,7 +568,7 @@ shared ({caller}) actor class FileRegistry() = this {
             }
         };
         let fm = FileManager.init(fileTree);
-        let file = switch (fm.get(?#file, ?#hash(fileHash))) {
+        let file = switch (fm.get(?#file(""), ?#hash(fileHash))) {
             case null return {body = Blob.fromArray([]); token = null};
             case (?f) f;
         };
@@ -627,7 +627,7 @@ shared ({caller}) actor class FileRegistry() = this {
             case(null) { return _defaultResponse(?"File tree not exist!") };
         };
         let fm = FileManager.init(fileTree);
-        switch(fm.get(?#file, ?#hash(fHash))) {
+        switch(fm.get(?#file(""), ?#hash(fHash))) {
             case null return _defaultResponse(?("File not exist! : " # fHash));  
             case (?f) {
                 // // support stream callback get file tree -> get file Hash
@@ -683,13 +683,15 @@ shared ({caller}) actor class FileRegistry() = this {
         return (payload, token);
     };
 
-    private func _makeStreamingHttpResponse((payload : Blob, token : ?Types.HttpStreamingCallbackToken)) : async Types.HttpResponse {
+    private func _makeStreamingHttpResponse(fm : FileManager.FileTree, (payload : Blob, token : ?Types.HttpStreamingCallbackToken)) : async Types.HttpResponse {
         if (token == null) {
             return {
                 upgrade = ?true;
                 status_code = 200;
-                headers = [/*("Content-Type", asset.ctype), ("cache-control", "public, max-age=15552000"), ("Content-Length", Nat.toText(contentLength))*/ 
-                ("Transfer-Encoding", "gzip"), ("Access-Control-Allow-Origin", "*")
+                headers = [("Content-Type", fm.getContentType()),
+                /*("cache-control", "public, max-age=15552000"), ("Content-Length", Nat.toText(contentLength))*/ 
+                ("Transfer-Encoding", "gzip"), 
+                ("Access-Control-Allow-Origin", "*")
                 ];
                 body = payload;
                 token = null;
@@ -699,8 +701,10 @@ shared ({caller}) actor class FileRegistry() = this {
         return {
             upgrade = ?true;
             status_code = 200;
-            headers = [/*("Content-Type", asset.ctype), ("cache-control", "public, max-age=15552000"), ("Content-Length", Nat.toText(contentLength))*/ 
-                ("Transfer-Encoding", "gzip"), ("Access-Control-Allow-Origin", "*")
+            headers = [("Content-Type", fm.getContentType()),
+                /*("cache-control", "public, max-age=15552000"), ("Content-Length", Nat.toText(contentLength))*/ 
+                ("Transfer-Encoding", "gzip"), 
+                ("Access-Control-Allow-Origin", "*")
                 ];
             body = payload;
             streaming_strategy = ?#Callback({
@@ -721,12 +725,12 @@ shared ({caller}) actor class FileRegistry() = this {
                         return _defaultResponse(?e);
                     };
                     case (#ok (chunk)) {
-                        await _makeStreamingHttpResponse(await _streamContent(fm.getFileHash(), chunk, fm.getTotalChunk()));
+                        await _makeStreamingHttpResponse(fm, await _streamContent(fm.getFileHash(), chunk, fm.getTotalChunk()));
                     };
                 };
             };
             case (?chunk) {
-                await _makeStreamingHttpResponse(await _streamContent(fm.getFileHash(), chunk, fm.getTotalChunk()));
+                await _makeStreamingHttpResponse(fm, await _streamContent(fm.getFileHash(), chunk, fm.getTotalChunk()));
             };
         };
         profiler.pop(p);
@@ -749,7 +753,7 @@ shared ({caller}) actor class FileRegistry() = this {
             case(null) { return _defaultResponse(?"File tree not exist!") };
         };
         let fm = FileManager.init(fileTree);
-        switch(fm.get(?#file, ?#hash(fHash))) {
+        switch(fm.get(?#file(""), ?#hash(fHash))) {
             case null return _defaultResponse(?("File not exist! : " # fHash));  
             case (?f) {
                 // support stream callback get file tree -> get file Hash

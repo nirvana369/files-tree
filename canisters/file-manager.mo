@@ -169,8 +169,9 @@ module {
             //     buf.add(f.get());
             // });
             for (f in paths.vals()) {
-                if (f.getType() == #file) {
-                    buf.add(f);
+                switch (f.getType()) {
+                    case (#file cType) buf.add(f);
+                    case (_) {};
                 };
             };
             Buffer.toArray(buf);
@@ -201,7 +202,20 @@ module {
         private func _found(t : ?Types.FileType, f : FileTree, filterBy : ?FilterType) : Bool {
             var found = switch (t) {
                             case null true; // not need check file type
-                            case (?ftype) f.getType() == ftype;
+                            case (?ftype) {
+                                switch (ftype, f.getType()) {
+                                    case (#file(paramType), #file(fileType)) {
+                                        if (paramType != "") {
+                                            paramType == fileType;
+                                        } else {  // if content type == empty -> accept all file type
+                                            true;
+                                        };
+                                    };
+                                    case (x, y) {
+                                        x == y;
+                                    }
+                                };
+                            };
                         };
             found := (found and (switch (filterBy) {
                                     case null return true; // no filter
@@ -294,9 +308,12 @@ module {
             };
             
             // i'm a file, i can't add you
-            if (obj.fType == #file) {
-                Debug.trap(getPath() # " is file, please choose folder to add " # file.getPath());
-                // return false;
+            switch (obj.fType) {
+                case (#file ctype) {
+                    Debug.trap(getPath() # " is file, please choose folder to add " # file.getPath());
+                    // return false;
+                };
+                case _ {};
             };
             // this is child of the file params 
             switch(file.findChild(this)) {
@@ -415,6 +432,13 @@ module {
             obj.hash;
         };
 
+        public func getContentType() : Text {
+            switch(obj.fType) {
+                case (#file ctype) ctype;
+                case (#directory) "directory";
+            };
+        };
+
         public func getFileSize() : Nat {
             obj.size;
         };
@@ -432,8 +456,9 @@ module {
         };
 
         public func registerFile(storageCanisterId : Principal, fileTreeId : Nat, fileId : Nat, owner : Principal) : async ?Types.File {
-            if (obj.fType != #file) {
-                return null;    
+            switch (obj.fType) {
+                case (#file ctype) {};
+                case _ {return null};
             };
             if (obj.id == 0 or obj.canisterId == "") {
                 await putFile(storageCanisterId, fileTreeId, fileId, owner);
@@ -465,10 +490,15 @@ module {
 
         public func deleteFile() : async () {
             // when delete file -> all chunk will be delete too
-            if (obj.canisterId != "" and obj.id > 0 and obj.fType == #file) {
-                let storageCanister : Types.FileStorage = actor(obj.canisterId);
-                let ret = await storageCanister.deleteFile(obj.id);
-            }
+            switch (obj.fType) {
+                case (#file ctype) {
+                    if (obj.canisterId != "" and obj.id > 0) {
+                        let storageCanister : Types.FileStorage = actor(obj.canisterId);
+                        let ret = await storageCanister.deleteFile(obj.id);
+                    }
+                };
+                case _ {};
+            };
         };
 
         public func putFile(storageCanisterId : Principal, rootId : Nat, fileId : Nat, owner : Principal) : async ?Types.File {
@@ -500,8 +530,10 @@ module {
         public func _assertFile() {
             _assertId();
             _assertCanisterId();
-            if (obj.fType != #file) {
-                Debug.trap("This is not a file: " # obj.name);
+            
+            switch (obj.fType) {
+                case (#file ctype) {};
+                case _ { Debug.trap("This is not a file: " # obj.name); };
             };
         };
 
@@ -609,16 +641,18 @@ module {
 
     private func _iterFiles(fileTree : FileTree, callback : (FileTree) -> ()) {
         _iter(fileTree, func (f) {
-            if (f.getType() == #file) {
-                callback(f);
+            switch (f.getType()) {
+                case (#file ctype) callback(f);
+                case _ { };
             };
         });
     };
 
     private func _asyncIterFiles(fileTree : FileTree, f : (FileTree) -> async ()) : async () {
         await _asyncIter(fileTree, func (x : FileTree) : async () {
-            if (x.getType() == #file) {
-                await f(x);
+            switch (x.getType()) {
+                case (#file ctype) await f(x);
+                case _ { };
             };
         });
     };

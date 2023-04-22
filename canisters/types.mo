@@ -5,7 +5,7 @@ module {
 
     public type FileType = {
         #directory;
-        #file;
+        #file : Text;
     };
 
     public type FileState = {
