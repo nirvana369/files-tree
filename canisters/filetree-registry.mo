@@ -285,11 +285,15 @@ shared ({caller}) actor class FileRegistry() = this {
                 #err "Permission invalid!";
             };
             case (?arr) {
-                let fTree = Array.mapFilter<Nat, Types.FileTree>(arr, func(id) {
-                    _getFileTree(id);
-                });
+                let map = HashMap.HashMap<Nat, Types.FileTree>(0, Nat.equal, Hash.hash);
+                for (id in arr.vals()) {
+                    switch (_getFileTree(id)) {
+                        case null {};
+                        case (?t) map.put(id, t);
+                    };
+                };
                 profiler.pop(p);
-                #ok fTree;
+                #ok (Iter.toArray(map.vals()));
             };
         };
     };
