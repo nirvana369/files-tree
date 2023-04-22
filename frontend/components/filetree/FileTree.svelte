@@ -9,7 +9,7 @@
     {:else}
       <!-- <div class="name" on:click={openUrl}> -->
         {'📜'}
-        {#if isSync}
+        {#if (file.state && file.state.hasOwnProperty('ready'))}
           <a href={url + $user + '/' + rootId + '/' + file.hash} target="_blank">{file.name}</a>
           {'✅'}
         {:else}
@@ -21,7 +21,7 @@
     {#if isFolder && isOpen}
       <div class="children">
         {#each file.children as child}
-          <FileTree file={child} rootId={rootId} />
+          <FileTree bind:file={child} rootId={rootId} />
         {/each}
       </div>
     {/if}
@@ -45,23 +45,14 @@
   }
 
   function getServerUrl() {
-    if (process.env.NODE_ENV !== "ic") {
-      return 'http://' + process.env.REGISTRY_CANISTER_ID + '.localhost:8000/';
-    } else {
+    // if (process.env.NODE_ENV !== "ic") {
+    //   return 'http://' + process.env.REGISTRY_CANISTER_ID + '.localhost:8000/';
+    // } else {
       return 'https://' + process.env.REGISTRY_CANISTER_ID + '.ic0.app/';
-    }
-  }
-  function getIsSync() {
-    if (file.fType && file.fType.hasOwnProperty('directory')) {
-      return false;
-    }
-    return (file.state && file.state.hasOwnProperty('ready'));
-    // return file.children && file.children.length > 0;
+    // }
   }
 
-  $: isSync = getIsSync();
   $: isFolder = getIsFolder(file.fType);
-
 
 </script>
 

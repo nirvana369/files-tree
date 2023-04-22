@@ -42,8 +42,11 @@
   let auth = false;
   let open = false;
 
+  $localFileTrees = [];
+
   async function selectFolder() {
     try {
+        $syncFiles = [];
         directoryHandle = await window.showDirectoryPicker();
         await checkFileTree();
         // document.getElementById("store-button").disabled = false;
@@ -82,11 +85,14 @@
     toogleSyncModal(false);
   }
 
-  async function reload() {
-    promise = reloadFileTrees();
+  async function reload(id, name) {
+    if (id && name) {
+      $localFileTrees = $localFileTrees.filter(function(el) { return el.id == id && el.name == name; }); 
+    };
+    promise = reloadFileTrees(id);
   }
 
-  async function reloadFileTrees() {
+  async function reloadFileTrees(id) {
     let list = [...$localFileTrees];
     let ret = await $fileTreeRegistry.getListFileTree();
     if (ret.ok) {

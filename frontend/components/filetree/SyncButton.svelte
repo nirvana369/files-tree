@@ -195,7 +195,16 @@
         break;
       }
     }
-    $syncFiles = [...$syncFiles, file.name];
+
+    if (err > 0) {
+      // if file data not exist to sync up ? remove file ?
+      $syncFiles = [...$syncFiles, file.name + " - FILE SYNC UP FAILED!"];
+    } else {
+      $syncFiles = [...$syncFiles, file.name];
+      file.state = {ready : null};
+      reload(file);
+    }
+    
     const processTime = new Date().getTime() - startTime;
     console.log("UPLOAD TIME : " + processTime + " | file : " + file.name);
   }
@@ -235,11 +244,14 @@
         }
         
     }
-    if (err == 0) {
+    if (err > 0) {
+      // if file data not exist to sync up ? remove file ?
+      $syncFiles = [...$syncFiles, file.name + " - FILE SYNC DOWN FAILED!"];
+    } else {
       $filesData[file.hash] = chunkData;
       $syncFiles = [...$syncFiles, file.name];
     }
-    
+
     console.log(file.name + " - " + chunkData.length);
 
     var nat8Arr = Array.from(chunkData)    // Uint8Array -> [Nat8]

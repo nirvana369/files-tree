@@ -30,7 +30,7 @@
       // remove local
       $localFileTrees = [];
     }
-    reload();
+    reload(folder.id, folder.name);
     toogleInAction(false);
   }
 

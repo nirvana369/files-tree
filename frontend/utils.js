@@ -186,11 +186,22 @@ import md5 from 'md5';
         }
       }
   }
+  
+  function walk(fileTree, callback) {
+      if (getIsFolder(fileTree.fType)) {
+          for (const child of fileTree.children) {
+            walk(child, callback);
+          }
+      } else {
+          callback(fileTree);
+      }
+  }
 
 export {  getIsFolder, 
           traverseDirectory, 
           mergeFileTree,
           getFileTreeData,
           mergeUInt8Arrays,
-          downloadFile
+          downloadFile,
+          walk
         };
