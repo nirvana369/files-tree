@@ -432,10 +432,14 @@ module {
         };
 
         public func registerFile(storageCanisterId : Principal, fileTreeId : Nat, fileId : Nat, owner : Principal) : async ?Types.File {
-            if (obj.fType == #file and (obj.id == 0 or obj.canisterId == "")) {
-                await putFile(storageCanisterId, fileTreeId, fileId, owner);
+            if (obj.fType != #file) {
+                return null;    
             };
-            null;
+            if (obj.id == 0 or obj.canisterId == "") {
+                await putFile(storageCanisterId, fileTreeId, fileId, owner);
+            } else {
+                await getFile(true);
+            };
         };
 
         public func getFile(isSync : Bool) : async ?Types.File {
@@ -451,6 +455,7 @@ module {
                         obj.totalChunk := f.totalChunk;
                         obj.hash := f.hash;
                         obj.size := f.size;
+                        obj.state := f.state;
                     };
                     case(null) { };
                 };
@@ -466,7 +471,7 @@ module {
             }
         };
 
-        public func putFile(storageCanisterId : Principal, rootId : Nat, fileId : Nat, owner : Principal) : async () {
+        public func putFile(storageCanisterId : Principal, rootId : Nat, fileId : Nat, owner : Principal) : async ?Types.File {
             let file : Types.File = {
                         rootId = rootId;
                         id = fileId;
@@ -486,8 +491,9 @@ module {
                     obj.id := f.id;
                     obj.canisterId := Principal.toText(storageCanisterId);
                     obj.state := f.state;
+                    ?f;
                 };
-                case(null) { };
+                case(null) { null};
             };
         };
 

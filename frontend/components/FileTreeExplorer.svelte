@@ -3,7 +3,7 @@
   import FileTreeItem from "./filetree/FileTreeItem.svelte";
   import { onMount } from 'svelte';
   import { useCanister } from "@connect2ic/svelte";
-  import { localFileTrees, serverFileTrees, syncFiles, user } from "../stores.js"
+  import { localFileTrees, serverFileTrees, syncFiles, user, filesData } from "../stores.js"
   import { traverseDirectory} from "../utils";
   import { useConnect } from "@connect2ic/svelte"
   import LoginButton from "./LoginButton.svelte"
@@ -41,7 +41,6 @@
   let directoryHandlePointer = {};
   let auth = false;
   let open = false;
-  let fileMapPointer = {};
 
   async function selectFolder() {
     try {
@@ -59,15 +58,14 @@
       return;
     }
     toogleSyncModal(true);
-    let fileMap = {};
     let fileTree = await traverseDirectory(directoryHandle, function(name, hash, content) {
         const file = { name: name, content: content };
         console.log("your file is : " + name);
         console.log(file);
-        fileMap[hash] = content;
+        $filesData[hash] = content;
         // save file to localDB ?
       });
-    fileMapPointer[fileTree.name] = fileMap;
+    
     
     console.log(fileTree);
     // let r = await objectStore.add(fileTree);
@@ -170,8 +168,7 @@
                   <FileTreeItem fileTree={f} 
                                 directoryHandle={directoryHandlePointer[f.name]} 
                                 toogleModal={toogleSyncModal} 
-                                reloadAction={reload}
-                                fileMap={fileMapPointer[f.name] ? fileMapPointer[f.name] : {}}/>
+                                reloadAction={reload}/>
                 </Row>
               {/each}
             {/await}

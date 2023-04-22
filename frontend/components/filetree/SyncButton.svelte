@@ -16,7 +16,7 @@
           traverseDirectory,
           mergeUInt8Arrays,
           } from "../../utils";
-  import { syncFiles } from "../../stores.js"
+  import { syncFiles, filesData } from "../../stores.js"
   import { useConnect } from "@connect2ic/svelte"
   import md5 from 'md5';
   import { Grid, Row, Column, InlineLoading } from "carbon-components-svelte";
@@ -34,7 +34,6 @@
   export let toogleModal;
   export let toogleInAction;
   export let toogleEnableDownload;
-  export let fileMap;
   export let reload;
 
   const [fileTreeRegistry] = useCanister("registry")
@@ -64,16 +63,16 @@
         const file = { name: name, content: content };
         console.log("your file is : " + name);
         console.log(file);
-        fileMap[hash] = content;
+        $filesData[hash] = content;
         // save file to localDB ?
       });
+      console.log($filesData);
       let tmp = await $fileTreeRegistry.verifyFileTree(fileTree);
       console.log("verify done");
       return fileTree;
   }
 
   async function handleSync() {
-    let isNew = folder.id;
     toogleInAction(true);
     toogleEnableDownload(false, folder);
     $syncFiles = [];
@@ -103,7 +102,7 @@
       console.log("SELECT FOLDER");
       console.log(directoryHandle);
       console.log("FILE MAP");
-      console.log(fileMap);
+      console.log($filesData);
       console.log("MERGE FILE TREE");
       console.log("--FOLDER");
       console.log(folder);
@@ -154,11 +153,12 @@
   }
 
   async function syncUp(fileTreeId, file) {
-    const data = fileMap[file.hash];
+    const data = $filesData[file.hash];
+    console.log(data);
     if (!data) {
       // if file data not exist to sync up ? remove file ?
       $syncFiles = [...$syncFiles, file.name + " - FILE NOT FOUND IN SELECTED FOLDER!"];
-      // alert("File data not found! re-select folder | name: " + file.name + " | hash: " + file.hash[0]);
+      alert("File data not found! re-select folder | name: " + file.name + " | hash: " + file.hash);
       return;
     }
     const chunkLength = 1000000;
@@ -184,7 +184,7 @@
       if (syncRet.ok) {
         chunkId++;
         err = 0;
-        // fileTree.state = syncRet.ok;
+        // file.state = syncRet.ok;
         console.log(syncRet);
       } else {
         err++;
@@ -201,13 +201,14 @@
   }
 
   async function syncDown(fileTreeId, file) {
-    const localFileData = fileMap[file.hash];
-    if (localFileData && localFileData.length > 0) {
-      // if file already download at local
+
+    const localFileData = $filesData[file.hash];
+    if (localFileData != null) {
       file.data = localFileData;
       $syncFiles = [...$syncFiles, file.name];
       return;
-    }
+    };
+
     let totalChunk = file.totalChunk;
     let i = 0;
     let err = 0;
@@ -235,17 +236,17 @@
         
     }
     if (err == 0) {
-      fileMap[file.hash] = chunkData;
+      $filesData[file.hash] = chunkData;
       $syncFiles = [...$syncFiles, file.name];
     }
     
-    console.log(file.name + " - " + fileMap[file.hash].length);
+    console.log(file.name + " - " + chunkData.length);
 
     var nat8Arr = Array.from(chunkData)    // Uint8Array -> [Nat8]
     let hash = md5(nat8Arr);
     console.log("hash cmp: hash1: " + file.hash + " | hash2:" + hash);
     const processTime = new Date().getTime() - startTime;
-    console.log("UPLOAD TIME : " + processTime + " | file : " + file.name);
+    console.log("DOWNLOAD TIME : " + processTime + " | file : " + file.name);
   }
 
   async function recursive(fileTree, callback) {

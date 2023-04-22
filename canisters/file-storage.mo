@@ -54,37 +54,36 @@ shared ({caller}) actor class FileStorage(_admin : [Principal], _storage : [Prin
                 buf.add(chunkInfo);
                 // else if hash equal
                 var state : Types.FileState = #empty;
-                if (buf.size() == file.totalChunk) {
-                    let map = HashMap.HashMap<Nat, Types.ChunkInfo>(0, Nat.equal, Hash.hash);
-                    // group all chunkid by canister id
-                    for (chunk in buf.vals()) {
-                        switch(map.get(chunk.chunkOrderId)) {
-                                case(?dupplicateChunk) { 
-                                    // process delete dupplicate chunk Id
-                                    let canister : Types.FileStorage = actor (chunk.canisterId);
-                                    await canister.deleteChunk(file.id, chunk.canisterChunkId);
-                                };
-                                case(null) { 
-                                    map.put(chunk.chunkOrderId, chunk);
-                                };
+                
+                let map = HashMap.HashMap<Nat, Types.ChunkInfo>(0, Nat.equal, Hash.hash);
+                // group all chunkid by canister id
+                for (chunk in buf.vals()) {
+                    switch(map.get(chunk.chunkOrderId)) {
+                            case(?dupplicateChunk) { 
+                                // process delete dupplicate chunk Id
+                                let canister : Types.FileStorage = actor (chunk.canisterId);
+                                ignore canister.deleteChunk(file.id, chunk.canisterChunkId);
                             };
-                    };
-                    
-                    buf.clear();
-                    buf := Buffer.fromIter<Types.ChunkInfo>(map.vals());
-
-                    if (map.size() == file.totalChunk) { // if collected enough chunks
-                        if (checkFileHash) {
-                            // join file - hash - compare hash if needed
+                            case(null) { 
+                                map.put(chunk.chunkOrderId, chunk);
+                            };
                         };
-                        state := #ready;
-                        // notify to file manager
-                        await rm.asynIterAdmins(func (admin : Principal) : async() {
-                            await notify(Principal.toText(admin), (#UpdateFileState (file.rootId, file.id)));
-                        });
-                    };
-                    
                 };
+                
+                buf.clear();
+                buf := Buffer.fromIter<Types.ChunkInfo>(map.vals());
+
+                if (buf.size() == file.totalChunk) { // if collected enough chunks
+                    if (checkFileHash) {
+                        // join file - hash - compare hash if needed
+                    };
+                    state := #ready;
+                    // notify to file manager
+                    await rm.asynIterAdmins(func (admin : Principal) : async() {
+                        ignore notify(Principal.toText(admin), (#UpdateFileState (file.rootId, file.id)));
+                    });
+                };
+                    
                 let ftmp = {
                         rootId = file.rootId;
                         id = file.id;
@@ -134,7 +133,7 @@ shared ({caller}) actor class FileStorage(_admin : [Principal], _storage : [Prin
         let p = profiler.push("notify." # canisterId);
 
         let registry : Types.EventBus = actor (canisterId);
-        await registry.eventHandler(e);
+        ignore registry.eventHandler(e);
 
         profiler.pop(p);
     };
@@ -190,8 +189,9 @@ shared ({caller}) actor class FileStorage(_admin : [Principal], _storage : [Prin
             };
         };
         _datastores.delete(id);
-        totalCanisterDataSize := totalCanisterDataSize - 1_000; // 1 kB metadata
-        
+        if (totalCanisterDataSize >= 1000) {
+            totalCanisterDataSize := totalCanisterDataSize - 1_000; // 1 kB metadata
+        };
         profiler.pop(p);
 
         #ok id;
@@ -209,7 +209,9 @@ shared ({caller}) actor class FileStorage(_admin : [Principal], _storage : [Prin
             case null ();
             case (?chunk) {
                 if (chunk.fileId == fileId) {
-                    totalCanisterDataSize := totalCanisterDataSize - chunk.data.size();
+                    if (totalCanisterDataSize >= chunk.data.size()) {
+                        totalCanisterDataSize := totalCanisterDataSize - chunk.data.size();
+                    };
                     _chunkData.delete(chunkId);
                 };
             };
@@ -221,13 +223,8 @@ shared ({caller}) actor class FileStorage(_admin : [Principal], _storage : [Prin
 
         let p = profiler.push("streamUp");
 
-        switch (_datastores.get(chunk.fileId)) {
-            case null { return null};
-            case (?file) {
-                if (not _validCaller(caller) and caller != file.owner) {
-                    return null;
-                };
-            };
+        if (not _validCaller(caller)) {
+            return null;
         };
         IdGenChunk := IdGenChunk + 1;
 
@@ -239,7 +236,12 @@ shared ({caller}) actor class FileStorage(_admin : [Principal], _storage : [Prin
             chunkOrderId = chunk.chunkOrderId;
         };
 
-        await notify(fileCanisterId, (#StreamUpChunk (chunk.fileId, chunkInfo)));
+        if (Principal.fromText(fileCanisterId) != Principal.fromActor(this)) {
+            ignore notify(fileCanisterId, (#StreamUpChunk (chunk.fileId, chunkInfo)));
+        } else {
+            await _updateFileChunk(chunk.fileId, chunkInfo);
+        };
+        
 
         totalCanisterDataSize := totalCanisterDataSize + chunk.data.size();
 

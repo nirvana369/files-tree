@@ -5,22 +5,17 @@
 <script>
   import { Button } from "carbon-components-svelte";
   import {getIsFolder} from "../../utils";
-  import {
-          downloadFile
-          } from "../../utils";
+  import { filesData } from "../../stores"
 
   export let folder;
   export let toogleInAction;
-  export let fileMap;
 
   async function download() {
     toogleInAction(true);
     console.log("PREPARE DOWNLOAD");
-    console.log(fileMap);
     console.log(folder);
     try {
       const dirHandle = await window.showDirectoryPicker();
-      // await downloadFile(dirHandle, folder, fileMap);
       await createDirectory(dirHandle, folder);
     } catch (error) {
       console.error("Failed to select folder:", error);
@@ -48,7 +43,7 @@
         if (getIsFolder(child.fType)) {
            createDirectory(curDir, child);
         } else {
-          const data = fileMap[child.hash];
+          const data = $filesData[child.hash];
           if (data && data.length > 0) {
             let curFile = await curDir.getFileHandle(child.name, { create: true });
             createFile(curFile, data);

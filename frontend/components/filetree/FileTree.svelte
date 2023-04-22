@@ -32,12 +32,11 @@
   import {getIsFolder} from "../../utils";
   import FileTree from "./FileTree.svelte";
   import { user } from "../../stores";
-  import { useCanister } from "@connect2ic/svelte";
   
   export let file;
   export let rootId;
   
-  const [fileTreeRegistry] = useCanister("registry")
+
   let isOpen = true;
   const url = getServerUrl();
 

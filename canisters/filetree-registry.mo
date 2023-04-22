@@ -112,7 +112,7 @@ shared ({caller}) actor class FileRegistry() = this {
     private func notify(canisterId : Text, e : Types.Event) : async () {
         let p = profiler.push("notify");
         let registry : Types.EventBus = actor (canisterId);
-        await registry.eventHandler(e);
+        ignore registry.eventHandler(e);
         profiler.pop(p);
     };
 
@@ -163,13 +163,6 @@ shared ({caller}) actor class FileRegistry() = this {
         #ok(imutableFileTree);
     };
 
-    private func _validate(f : Types.MutableFileTree) {
-        if (f.hash == "") Debug.trap("Give me file hash to register file: " # f.name);
-        if (f.size == 0) Debug.trap("Give me file size to register file: " # f.name);
-        if (f.totalChunk == 0) Debug.trap("Give me file totalChunk to register file: " # f.name);
-        if (f.name == "") Debug.trap("Give me file name to register file: " # f.name);
-    };
-
     private func _verifyOwner(caller : Principal, id : Nat) : ?Types.FileTree {
         switch(rm.verify(caller)) {
             case (?#superadmin or ?#admin or ?#storage) {
@@ -204,24 +197,13 @@ shared ({caller}) actor class FileRegistry() = this {
         let files  = fileManager.getListFile();
       
         for (f in files.vals()) {
-            _validate(f.get());
-            if (f.getId() <= 0) {
-                let (storageCanisterId, storageCanister) = await _getCurrentDataStorage();
-                let ret = await f.registerFile(storageCanisterId, fTreeId, _createFileId(), caller);
-                switch(ret) {
-                    case null return #err ("Register file failed: " # Nat.toText(f.getId()));
-                    case (?file) {};
-                }
-            } else {
-                let ret = await f.getFile(false);
-                switch (ret) {
-                    case (?existedFile) {};
-                    case (null) {
-                        // file not exist -> wrong file id 
-                        return #err ("file not exist -> wrong file id: " # Nat.toText(f.getId()));
-                    };
+            let (storageCanisterId, storageCanister) = await _getCurrentDataStorage();
+            let ret = await f.registerFile(storageCanisterId, fTreeId, _createFileId(), caller);
+            switch(ret) {
+                case null return #err ("Register file failed: " # Nat.toText(f.getId()));
+                case (?file) {
                 };
-            };
+            }
         };
         let imutableFileTree = fileManager.freeze();
         // return result for client -> client call canister file storage by canister id + id file to upload direct
@@ -444,7 +426,7 @@ shared ({caller}) actor class FileRegistry() = this {
             
             // notify all storage add new storage
             await rm.asynIterStorages(func (s : Principal) : async () {
-                await notify(Principal.toText(s), #SyncRole(rm.getRoles()));
+                ignore notify(Principal.toText(s), #SyncRole(rm.getRoles()));
             });
             profiler.pop(p);
 
@@ -509,7 +491,7 @@ shared ({caller}) actor class FileRegistry() = this {
             case (?#admin or ?#superadmin) {
                 rm.addAdmin(p);
                 await rm.asynIterStorages(func (s : Principal) : async () {
-                    await notify(Principal.toText(s), #SyncRole(rm.getRoles()));
+                    ignore notify(Principal.toText(s), #SyncRole(rm.getRoles()));
                 });
             };
             case (_) {
@@ -523,7 +505,7 @@ shared ({caller}) actor class FileRegistry() = this {
             case (?#admin or ?#superadmin) {
                 rm.addStorage(p);
                 await rm.asynIterStorages(func (s : Principal) : async () {
-                    await notify(Principal.toText(s), #SyncRole(rm.getRoles()));
+                    ignore notify(Principal.toText(s), #SyncRole(rm.getRoles()));
                 });
             };
             case (_) {
@@ -685,7 +667,7 @@ shared ({caller}) actor class FileRegistry() = this {
         };
         let p = profiler.push("_streamContent");
 
-        await notify(Principal.toText(Principal.fromActor(this)), (#SyncCache(fileHash, chunk.chunkOrderId + 1)));
+        ignore notify(Principal.toText(Principal.fromActor(this)), (#SyncCache(fileHash, chunk.chunkOrderId + 1)));
 
         let token = ?{
             content_encoding = "gzip";

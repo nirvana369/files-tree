@@ -21,3 +21,4 @@ export const neuron = writable(null);
 export const serverFileTrees = writable([]);
 export const localFileTrees = writable([]);
 export const syncFiles = writable([]);
+export const filesData = writable({});

@@ -5,7 +5,8 @@
 <script>
   import { useCanister } from "@connect2ic/svelte";
   import { Button } from "carbon-components-svelte";
-  import { localFileTrees } from "../../stores.js"
+  import { localFileTrees, filesData } from "../../stores.js"
+  import { getIsFolder } from "../../utils"
 
   export let folder;
   export let toogleInAction;
@@ -16,6 +17,11 @@
   async function deleteFileTree() {
     toogleInAction(true);
     console.log("DELETE");
+    // remove local
+    await recursive(folder, async function syncCallback(file) {
+        $filesData[file.hash] = null;
+    });
+
     if (folder.id > 0) {
       let ret = await $fileTreeRegistry.deleteFileTree(folder.id);
       console.log(ret);
@@ -26,6 +32,16 @@
     }
     reload();
     toogleInAction(false);
+  }
+
+  async function recursive(fileTree, callback) {
+      if (getIsFolder(fileTree.fType)) {
+          for (const child of fileTree.children) {
+              await recursive(child, callback);
+          }
+      } else {
+          await callback(fileTree);
+      }
   }
 
 </script>

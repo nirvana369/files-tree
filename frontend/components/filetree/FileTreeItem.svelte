@@ -11,12 +11,10 @@
                                               toogleModal={toogleModal} 
                                               toogleInAction={toogleInAction} 
                                               toogleEnableDownload={toogleEnableDownload}
-                                              fileMap={fileMap}
                                               reload={reloadAction}/></Column>
     {#if enableDownload}
       <Column sm={1} md={2} lg={2} style="padding-top:33px;"><DownloadButton  folder={fileTree} 
-                                                                              toogleInAction={toogleInAction}
-                                                                              fileMap={fileMap}/></Column>
+                                                                              toogleInAction={toogleInAction}/></Column>
       {/if}
   {/if}
 </template>
@@ -32,7 +30,6 @@
   export let directoryHandle;
   export let toogleModal;
   export let reloadAction;
-  export let fileMap;
 
   let inAction = false;
   let enableDownload = false;
