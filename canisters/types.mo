@@ -84,7 +84,6 @@ module {
         // event control file & chunk state
         #StreamUpChunk : (Nat, ChunkInfo);      //  #UpdateFileState(FileId, ChunkId, ChunkCanister, ChunkOrderId); -> update chunk info to file metadata
         #UpdateFileState : (Nat, Nat);   //  #UpdateFileTreeState(FileTreeId, FileId); -> update state file to ready
-        #SyncCache : (Text, Nat);  // sync cache file id, chunk id - speed up streaming
         #DeleteChunk : (Text, Nat); // canister id, chunkid
         // event control roles
         #SyncRole : [(Principal, Roles)];
@@ -122,7 +121,7 @@ module {
 
     public type HttpStreamingStrategy = {
         #Callback: {
-            callback: shared (HttpStreamingCallbackToken) -> async (HttpStreamingCallbackResponse);
+            callback: shared query (HttpStreamingCallbackToken) -> async (HttpStreamingCallbackResponse);
             token: HttpStreamingCallbackToken;
         };
     };
