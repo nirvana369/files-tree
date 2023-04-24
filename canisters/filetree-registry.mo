@@ -363,18 +363,18 @@ shared ({caller}) actor class FileRegistry() = this {
         };
     };
 
-    public shared func getStorageInfo() : async [{id:Text; mem: Text}] {
-        let buf = Buffer.Buffer<{id: Text; mem : Text;}>(1);
+    public shared func getStoragesInfo() : async [{id:Text; mem: Text; cycle: Text}] {
+        let buf = Buffer.Buffer<{id: Text; mem : Text; cycle : Text}>(1);
         await rm.asynIterStorages(func (s : Principal) : async () {
             let canister : Types.FileStorage = actor(Principal.toText(s));
-            let memAvailable = await canister.getCanisterMemoryAvailable();
-            buf.add({id = Principal.toText(s); mem = Nat.toText(memAvailable);});
+            let {mem:Text; cycle: Text} = await canister.getStorageInfo();
+            buf.add({id = Principal.toText(s); mem = mem; cycle = cycle});
         });
         Buffer.toArray(buf);
     };
 
-    public shared ({caller}) func getServerInfo() : async [{id:Text; cycle: Text}] {
-        [{id = Principal.toText(Principal.fromActor(this)); cycle = Nat.toText((Cycles.balance()/1000000000000)) # " T cycles"}];
+    public shared ({caller}) func getServerInfo() : async [{id:Text; mem : Text; cycle: Text}] {
+        [{id = Principal.toText(Principal.fromActor(this)); mem = ""; cycle = Nat.toText((Cycles.balance()/1000000000000)) # " T cycles"}];
     };
 
     private func _generateFileStorage() : async Result.Result<Principal,Text>{

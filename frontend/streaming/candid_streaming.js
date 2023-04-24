@@ -1,6 +1,7 @@
 import { streamingCallbackHttpResponseType, Token } from './candid/candid_http';
 import { IDL } from '@dfinity/candid';
 import { concat, } from '@dfinity/agent';
+import { logging } from '../utils';
 
 const MAX_CALLBACKS = 1000;
 
@@ -14,17 +15,20 @@ export async function streamContent(agent, canisterId, streamingStrategy) {
         if (currentCallback > MAX_CALLBACKS) {
             throw new Error('Exceeded streaming callback limit');
         }
-        const callbackResponse = await queryNextChunk(tokenOpt[0], agent, canisterId, callBackFunc);
-        console.log(callbackResponse);
+        const callbackResponse = await chunkStreaming(tokenOpt[0], agent, canisterId, callBackFunc);
+        logging("HTTP STREAMING CALLBACK RESPONSE:");
+        logging(callbackResponse);
         switch (callbackResponse.status) {
             case "replied" /* Replied */: {
                 const callbackData = IDL.decode([streamingCallbackHttpResponseType], callbackResponse.reply.arg)[0];
-                console.log(callbackData);
+                logging(callbackData);
                 if (isStreamingCallbackResponse(callbackData)) {
                     buffer = concat(buffer, callbackData.body);
-                    console.log(buffer.length);
+                    logging("CHUNK LENGTH:");
+                    logging(buffer.length);
                     tokenOpt = callbackData.token;
-                    console.log(tokenOpt);
+                    logging("TOKEN RESPONSE:")
+                    logging(tokenOpt);
                 }
                 else {
                     throw new Error('Unexpected callback response: ' + callbackData);
@@ -39,7 +43,7 @@ export async function streamContent(agent, canisterId, streamingStrategy) {
     }
     return buffer;
 }
-function queryNextChunk(token, agent, canisterId, callBackFunc) {
+function chunkStreaming(token, agent, canisterId, callBackFunc) {
     // const tokenType = token.type();
     // unbox primitive values
     const tokenValue = typeof token.valueOf === 'function' ? token.valueOf() : token;

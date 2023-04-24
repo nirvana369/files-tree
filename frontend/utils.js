@@ -1,5 +1,13 @@
-import md5 from 'md5';
-  
+  import md5 from 'md5';
+  import { isDebug } from './stores';
+  import { get } from 'svelte/store'
+
+  function logging(obj) {
+    if (get(isDebug)) {
+      console.log(obj);
+    }
+  }
+
   function mergeFile(fileA, fileB) {
       let ret = {
         id : fileA.id > 0 ? fileA.id : fileB.id,
@@ -150,9 +158,9 @@ import md5 from 'md5';
   }
   
   async function downloadFile(dirHandle, folder, fileMap) {
-    console.log("UTILS DOWNLOAD file");
-    console.log(fileMap);
-    console.log(folder);
+    logging("UTILS DOWNLOAD file");
+    logging(fileMap);
+    logging(folder);
     await createDirectory(dirHandle, folder, fileMap);
   }
 
@@ -203,5 +211,6 @@ export {  getIsFolder,
           getFileTreeData,
           mergeUInt8Arrays,
           downloadFile,
-          walk
+          walk,
+          logging
         };

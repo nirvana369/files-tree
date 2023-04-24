@@ -15,6 +15,7 @@
           getIsFolder, 
           traverseDirectory,
           mergeUInt8Arrays,
+          logging
           } from "../../utils";
   import { syncFiles, filesData, user } from "../../stores.js"
   import { useConnect } from "@connect2ic/svelte"
@@ -63,14 +64,14 @@
 
     const fileTree = await traverseDirectory(directoryHandle, function(name, hash, content) {
         const file = { name: name, content: content };
-        console.log("your file is : " + name);
-        console.log(file);
+        logging("your file is : " + name);
+        logging(file);
         $filesData[hash] = content;
         // save file to localDB ?
       });
-      console.log($filesData);
+      logging($filesData);
       let tmp = await $fileTreeRegistry.verifyFileTree(fileTree);
-      console.log("verify done");
+      logging("verify done");
       return fileTree;
   }
 
@@ -84,7 +85,7 @@
         toogleEnableDownload(true, syncFoler);
       }
     } catch (e) {
-      console.log(e);
+      logging(e);
     }
     //   reload();  
     toogleInAction(false);
@@ -101,45 +102,45 @@
       }
       toogleModal(true);
 
-      console.log("SELECT FOLDER");
-      console.log(directoryHandle);
-      console.log("FILE MAP");
-      console.log($filesData);
-      console.log("MERGE FILE TREE");
-      console.log("--FOLDER");
-      console.log(folder);
-      console.log("--FOLDER SELECTED");
-      console.log(fileTreeSelected);
+      logging("SELECT FOLDER");
+      logging(directoryHandle);
+      logging("FILE MAP");
+      logging($filesData);
+      logging("MERGE FILE TREE");
+      logging("--FOLDER");
+      logging(folder);
+      logging("--FOLDER SELECTED");
+      logging(fileTreeSelected);
 
       if (!folder || !folder.id || folder.id.length === 0) {
           // new selected folder -> register & upload file
           let ret = await $fileTreeRegistry.createFileTree(fileTreeSelected);
-          console.log("CREATE FILE TREE");
-          console.log(ret);
+          logging("CREATE FILE TREE");
+          logging(ret);
           if (ret.ok) {
             // folder has struct similar to ret.ok, diffirent is ret.ok not have attribute data
             folder = ret.ok;
           } else {
-            console.log(ret.err);
+            logging(ret.err);
             return;
           }
       } else {
         // check & update file tree
         let merge = mergeFileTree(folder, fileTreeSelected);
-        console.log("MERGE RESULT");
-        console.log(merge);
+        logging("MERGE RESULT");
+        logging(merge);
         let ret = await $fileTreeRegistry.updateFileTree(merge);
-        console.log("UPDATE FILE TREE");
-        console.log(ret);
+        logging("UPDATE FILE TREE");
+        logging(ret);
         if (ret.ok) {
           // folder has struct similar to ret.ok, diffirent is ret.ok not have attribute data
           folder = ret.ok;
         } else {
-          console.log(ret.err);
+          logging(ret.err);
           return;
         }
       }
-      console.log("RECURSIVE SYNC");
+      logging("RECURSIVE SYNC");
 
       await recursive(folder, async function syncCallback(file) {
         if (file.state.hasOwnProperty('empty')) {
@@ -150,14 +151,14 @@
         }
       });
       toogleModal(false);
-      console.log("READY TO DOWNLOAD");
-      console.log(folder);
+      logging("READY TO DOWNLOAD");
+      logging(folder);
       return folder;
   }
 
   async function syncUp(fileTreeId, file) {
     const data = $filesData[file.hash];
-    console.log(data);
+    logging(data);
     if (!data) {
       // if file data not exist to sync up ? remove file ?
       $syncFiles = [...$syncFiles, file.name + " - FILE NOT FOUND IN SELECTED FOLDER!"];
@@ -174,29 +175,30 @@
     while (chunkId < totalChunk) {
       start = chunkId * chunkLength;
       const c = data.slice(start, start + chunkLength);
-      console.log("PROC CHUNK: " + chunkId + " | size: " + c.length);
+      logging("PROC CHUNK: " + chunkId + " | size: " + c.length);
       let bytes = Array.from(c);
       let chunk = {
           fileId : file.id,
           chunkOrderId : chunkId,
           data : bytes,
       }
+      // Loop til upload all chunks or break if retry 3 times get failed result
       let syncRet; 
       try {
         syncRet = await $fileTreeRegistry.streamUpFile(fileTreeId, file.id, chunk);
       } catch (error) {
         syncRet.err = error;
       }
-      console.log(file.id + " | stream up | " + chunkId);
-      console.log(chunk);
+      logging(file.id + " | stream up | " + chunkId);
+      logging(chunk);
       if (syncRet.ok) {
         chunkId++;
         err = 0;
         // file.state = syncRet.ok;
-        console.log(syncRet);
+        logging(syncRet);
       } else {
         err++;
-        console.log(syncRet);
+        logging(syncRet);
       }
       if (err == 3) {
         alert("Server connection error!");
@@ -214,7 +216,7 @@
     }
     
     const processTime = new Date().getTime() - startTime;
-    console.log("UPLOAD TIME : " + processTime + " | file : " + file.name);
+    logging("UPLOAD TIME : " + processTime + " | file : " + file.name);
   }
 
   async function syncDown(fileTreeId, file) {
@@ -238,7 +240,7 @@
         } catch (error) {
           syncRet.err = error;
         }
-        console.log(syncRet);
+        logging(syncRet);
         if (syncRet.ok) {
           let chunk = syncRet.ok;
           chunkData = mergeUInt8Arrays(chunkData, chunk.data);
@@ -250,28 +252,27 @@
             // if retry 3 times
             break;
           }
-          if (syncRet.err == "File data is #empty") {
-            alert(syncRet.err);
-            break;
-          }
+          logging(syncRet);
+          // alert(syncRet);
         }
         
     }
     if (err > 0) {
       // if file data not exist to sync up ? remove file ?
       $syncFiles = [...$syncFiles, file.name + " - FILE SYNC DOWN FAILED!"];
+      alert("Re-sync file: " + file.name);
     } else {
       $filesData[file.hash] = chunkData;
-      $syncFiles = [...$syncFiles, file.name];
+      $syncFiles = [...$syncFiles, file.name + " - " + chunkData.length];
     }
 
-    console.log(file.name + " - " + chunkData.length);
+    logging(file.name + " - " + chunkData.length);
 
     var nat8Arr = Array.from(chunkData)    // Uint8Array -> [Nat8]
     let hash = md5(nat8Arr);
-    console.log("hash cmp: hash1: " + file.hash + " | hash2:" + hash);
+    logging("hash cmp: hash1: " + file.hash + " | hash2:" + hash);
     const processTime = new Date().getTime() - startTime;
-    console.log("DOWNLOAD TIME : " + processTime + " | file : " + file.name);
+    logging("DOWNLOAD TIME : " + processTime + " | file : " + file.name);
   }
 
   export var HTTPHeaders;
@@ -302,6 +303,14 @@
 
 
   async function streamDown(fileTreeId, file) {
+
+    const localFileData = $filesData[file.hash];
+    if (localFileData != null) {
+      file.data = localFileData;
+      $syncFiles = [...$syncFiles, file.name];
+      return;
+    };
+
     let startTime = new Date().getTime();
     const agent = new HttpAgent({
       host: "https://ic0.app",
@@ -318,11 +327,20 @@
         body: new Uint8Array([0]),
         certificate_version: [],
     };
-    console.log(url);
+    logging(url);
     
-    console.log(httpRequest);
-    let httpResponse = await $fileTreeRegistry.http_request(httpRequest);
-
+    logging(httpRequest);
+    let httpResponse;
+    let retry = 1;
+    while (retry != 0) {
+      try {
+        httpResponse = await $fileTreeRegistry.http_request(httpRequest);
+        retry = 0;
+      } catch (error) {
+        logging(error);
+        retry++;
+      }
+    }
     const upgradeCall = httpResponse.upgrade.length === 1 && httpResponse.upgrade[0];
     let _a, _b;
     const bodyEncoding = (_b = (_a = httpResponse.headers
@@ -330,7 +348,16 @@
     if (upgradeCall) {
         const { certificate_version } = httpRequest, httpUpdateRequest = __rest(httpRequest, ["certificate_version"]);
         // repeat the request as an update call
-        httpResponse = await $fileTreeRegistry.http_request_update(httpUpdateRequest);
+        retry = 1;
+        while (retry != 0) {
+          try {
+            httpResponse = await $fileTreeRegistry.http_request_update(httpUpdateRequest);  
+            retry = 0;
+          } catch (error) {
+            logging(error);
+            retry++;
+          }
+        }
     }
     // Redirects are blocked for query calls only: if this response has the upgrade to update call flag set,
     // the update call is allowed to redirect. This is safe because the response (including the headers) will go through consensus.
@@ -339,18 +366,18 @@
         httpResponse.status_code < 400) {
         throw new NotAllowedRequestRedirectError();
     }
-    console.log(httpResponse);
+    logging(httpResponse);
     // if we do streaming, body contains the first chunk
     let buffer = new ArrayBuffer(0);
     buffer = concat(buffer, httpResponse.body);
-    console.log("BUFFER");
-    console.log(buffer);
+    logging("BUFFER");
+    logging(buffer);
     if (httpResponse.streaming_strategy.length !== 0) {
         buffer = concat(buffer, await streamContent(agent, process.env.REGISTRY_CANISTER_ID, httpResponse.streaming_strategy[0]));
     }
     const chunkData = new Uint8Array(buffer);
 
-    console.log(file.name + " - " + chunkData.length);
+    logging(file.name + " - " + chunkData.length);
 
     var nat8Arr = Array.from(chunkData)    // Uint8Array -> [Nat8]
     let hash = md5(nat8Arr);
@@ -361,9 +388,9 @@
       $filesData[file.hash] = chunkData;
       $syncFiles = [...$syncFiles, file.name];
     }
-    console.log("hash cmp: hash1: " + file.hash + " | hash2:" + hash);
+    logging("hash cmp: hash1: " + file.hash + " | hash2:" + hash);
     const processTime = new Date().getTime() - startTime;
-    console.log("DOWNLOAD TIME : " + processTime + " | file : " + file.name);
+    logging("DOWNLOAD TIME : " + processTime + " | file : " + file.name);
   };
   
   async function recursive(fileTree, callback) {

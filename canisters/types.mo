@@ -66,6 +66,7 @@ module {
         putFile : shared (file : File) -> async ?File;
         getCanisterFilesAvailable : shared () -> async Nat;
         getCanisterMemoryAvailable : shared () -> async Nat;
+        getStorageInfo : shared () -> async {mem:Text; cycle: Text};
         // getCanisterId : shared () -> async Principal;
         readFile : query (Nat) -> async ?File;
         deleteFile : shared (Nat) -> async Result.Result<Nat, Text>;

@@ -20,6 +20,7 @@
   import "carbon-components-svelte/css/g90.css";
 //   import "carbon-components-svelte/css/g100.css";
   import { Content, Grid, Row, Column } from "carbon-components-svelte";
+  import { isDebug } from "./stores";
 
   const client = createClient({
     canisters: {
@@ -31,6 +32,11 @@
       dev: import.meta.env.DEV,
     },
   })
+
+  const queryString = window.location.search;
+  const urlParams = new URLSearchParams(queryString);
+  const product = urlParams.get('is_debug');
+  $isDebug = product === "true";
 </script>
 
 <Connect2ICProvider client={client}>

@@ -2,6 +2,7 @@ import Types "types";
 import RBAC "roles";
 import Profiler "profiler";
 
+import Cycles "mo:base/ExperimentalCycles";
 import HashMap "mo:base/HashMap";
 import Nat "mo:base/Nat";
 import Hash "mo:base/Hash";
@@ -286,6 +287,10 @@ shared ({caller}) actor class FileStorage(_admin : [Principal], _storage : [Prin
 
     public func getCanisterFilesAvailable() : async Nat {
         return (DATASTORE_CANISTER_CAPACITY - totalCanisterDataSize) / _numberOfDataPerCanister;
+    };
+
+    public func getStorageInfo() : async {mem:Text; cycle: Text} {
+        {mem = Nat.toText(_remainMemory()); cycle = Nat.toText((Cycles.balance()/1000000000000)) # " T cycles"};
     };
 
     //  The work required before a canister upgrade begins.

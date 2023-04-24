@@ -29,7 +29,7 @@
 </template>
 
 <script>
-  import {getIsFolder} from "../../utils";
+  import { getIsFolder, logging} from "../../utils";
   import FileTree from "./FileTree.svelte";
   import { user } from "../../stores";
   
@@ -40,6 +40,7 @@
   let isOpen = true;
   const url = getServerUrl();
 
+  logging(url);
   function toggleOpen() {
     isOpen = !isOpen;
   }

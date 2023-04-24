@@ -4,7 +4,7 @@
 </template>
 <script>
   import { Button } from "carbon-components-svelte";
-  import {getIsFolder} from "../../utils";
+  import { getIsFolder, logging} from "../../utils";
   import { filesData } from "../../stores"
 
   export let folder;
@@ -12,8 +12,8 @@
 
   async function download() {
     toogleInAction(true);
-    console.log("PREPARE DOWNLOAD");
-    console.log(folder);
+    logging("PREPARE DOWNLOAD");
+    logging(folder);
     try {
       const dirHandle = await window.showDirectoryPicker();
       await createDirectory(dirHandle, folder);
