@@ -44,8 +44,8 @@ shared ({caller}) actor class FileRegistry() = this {
 
     let _numberOfDataPerCanister : Nat = DATASTORE_CANISTER_CAPACITY / CHUNK_DATA_SIZE;
 
-    var IdGen : Nat = 0;
-    var IdGenFile : Nat = 0;
+    stable var IdGen : Nat = 0;
+    stable var IdGenFile : Nat = 0;
 
     stable var UserIdGen : Nat = 0;
 

@@ -23,7 +23,7 @@ shared ({caller}) actor class FileStorage(_admin : [Principal], _storage : [Prin
 
     let rm : RBAC.Role = RBAC.init(caller, _admin, _storage);
 
-    var IdGenChunk = 0;
+    stable var IdGenChunk = 0;
 
     let DATASTORE_CANISTER_CAPACITY : Nat = 2_000_000_000;
 
@@ -31,7 +31,7 @@ shared ({caller}) actor class FileStorage(_admin : [Principal], _storage : [Prin
 
     let _numberOfDataPerCanister : Nat = DATASTORE_CANISTER_CAPACITY / CHUNK_SIZE;
 
-    var totalCanisterDataSize = 0;
+    stable var totalCanisterDataSize = 0;
 
     var checkFileHash = false;
 
