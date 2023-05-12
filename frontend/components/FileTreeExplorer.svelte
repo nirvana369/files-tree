@@ -4,7 +4,7 @@
   import { onMount } from 'svelte';
   import { useCanister } from "@connect2ic/svelte";
   import { localFileTrees, serverFileTrees, syncFiles, user, filesData } from "../stores.js"
-  import { traverseDirectory} from "../utils";
+  import { traverseDirectory, logging} from "../utils";
   import { useConnect } from "@connect2ic/svelte"
   import LoginButton from "./LoginButton.svelte"
   import HowToUse from "./HowToUse.svelte";
@@ -63,14 +63,14 @@
     toogleSyncModal(true);
     let fileTree = await traverseDirectory(directoryHandle, function(name, hash, content) {
         const file = { name: name, content: content };
-        console.log("your file is : " + name);
-        console.log(file);
+        logging("your file is : " + name);
+        logging(file);
         $filesData[hash] = content;
         // save file to localDB ?
       });
     
     
-    console.log(fileTree);
+    logging(fileTree);
     // let r = await objectStore.add(fileTree);
     let tmp = await $fileTreeRegistry.verifyFileTree(fileTree);
 
@@ -80,8 +80,8 @@
     $localFileTrees = [fileTree];
     reload();
 
-    console.log("verify done");
-    console.log(tmp);
+    logging("verify done");
+    logging(tmp);
     toogleSyncModal(false);
   }
 
@@ -98,12 +98,12 @@
     if (ret.ok) {
         $serverFileTrees = ret.ok;
         list = [...list, ...$serverFileTrees];
-        console.log("LIST TREE");
-        console.log(list);
+        logging("LIST TREE");
+        logging(list);
         return list;
     } else {
-      console.log("getListFileTree #ERR:");
-      console.log(ret);
+      logging("getListFileTree #ERR:");
+      logging(ret);
     }
     return list;
   }
@@ -124,21 +124,21 @@
           reload();
 
           // let whoami = await $fileTreeRegistry.whoami();
-          // console.log("WHO ARE YOU 2");
-          // console.log(whoami);
+          // logging("WHO ARE YOU 2");
+          // logging(whoami);
           $user = $principal;
           // code to fetch tree data from server
         }
     }, 2000);  
     
     // let whoami = await $fileTreeRegistry.whoami();
-    // console.log("WHO ARE YOU 1");
-    // console.log(whoami);
+    // logging("WHO ARE YOU 1");
+    // logging(whoami);
     // code to fetch tree data from server
   });
 
   function toogleSyncModal(state) {
-    console.log("toogle modal");
+    logging("toogle modal");
     open = state;
   }
 

@@ -22,3 +22,4 @@ export const serverFileTrees = writable([]);
 export const localFileTrees = writable([]);
 export const syncFiles = writable([]);
 export const filesData = writable({});
+export const isDebug = writable(false);

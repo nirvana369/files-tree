@@ -7,6 +7,7 @@
                 <DataTable
                 headers={[
                   { key: "id", value: "Principal" },
+                  { key: "mem", value: "Memory" },
                   { key: "cycle", value: "Cycle available" },
                 ]}
                 rows={list}
@@ -19,7 +20,8 @@
             <DataTable
               headers={[
                 { key: "id", value: "Principal" },
-                { key: "mem", value: "Memory available" },
+                { key: "mem", value: "Memory" },
+                { key: "cycle", value: "Cycle available" },
               ]}
               rows={list}
             />
@@ -57,7 +59,7 @@
 
   let promise = getProfile();   
   
-  let promiseInfo = type == 1 ? $fileTreeRegistry.getServerInfo() : $fileTreeRegistry.getStorageInfo();
+  let promiseInfo = type == 1 ? $fileTreeRegistry.getServerInfo() : $fileTreeRegistry.getStoragesInfo();
   
   async function getProfile() {
     let x = type == 1 ? await $fileTreeRegistry.getProfiler() : await $fileStorage.getProfiler();

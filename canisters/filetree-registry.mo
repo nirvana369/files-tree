@@ -44,8 +44,8 @@ shared ({caller}) actor class FileRegistry() = this {
 
     let _numberOfDataPerCanister : Nat = DATASTORE_CANISTER_CAPACITY / CHUNK_DATA_SIZE;
 
-    var IdGen : Nat = 0;
-    var IdGenFile : Nat = 0;
+    stable var IdGen : Nat = 0;
+    stable var IdGenFile : Nat = 0;
 
     stable var UserIdGen : Nat = 0;
 
@@ -73,36 +73,6 @@ shared ({caller}) actor class FileRegistry() = this {
             case(#UpdateFileState (fileTreeId, fileId)) {
                 let p = profiler.push("eventHandler.UpdateFileState");
                 _updateFileState(fileTreeId, fileId, #ready);
-                profiler.pop(p);
-            };
-            case(#SyncCache(fileHash, chunkId)) {
-                let p = profiler.push("eventHandler.SyncCache");
-                //get file
-                // get chunk
-                // put cache
-                let fileTreeId = switch(_streamCache.get(fileHash)) {
-                    case null {0};
-                    case (?fileInfo) {
-                        fileInfo.fileId;
-                    };
-                };
-                switch (_getFileTree(fileTreeId)) {
-                    case null {};
-                    case (?ft) {
-                        let fm = FileManager.init(ft);
-                        let file = switch (fm.get(?#file(""), ?#hash(fileHash))) {
-                            case null {};
-                            case (?f) {
-                                switch (await f.getChunk(chunkId, false)) {
-                                    case (#err (e)) {};
-                                    case (#ok (chunk)) {
-                                        _streamCache.put(_keyStreamCache(fileHash, chunkId), chunk);
-                                    };
-                                }
-                            };
-                        };
-                    }
-                };
                 profiler.pop(p);
             };
             case (_) { };
@@ -393,18 +363,18 @@ shared ({caller}) actor class FileRegistry() = this {
         };
     };
 
-    public shared func getStorageInfo() : async [{id:Text; mem: Text}] {
-        let buf = Buffer.Buffer<{id: Text; mem : Text;}>(1);
+    public shared func getStoragesInfo() : async [{id:Text; mem: Text; cycle: Text}] {
+        let buf = Buffer.Buffer<{id: Text; mem : Text; cycle : Text}>(1);
         await rm.asynIterStorages(func (s : Principal) : async () {
             let canister : Types.FileStorage = actor(Principal.toText(s));
-            let memAvailable = await canister.getCanisterMemoryAvailable();
-            buf.add({id = Principal.toText(s); mem = Nat.toText(memAvailable);});
+            let {mem:Text; cycle: Text} = await canister.getStorageInfo();
+            buf.add({id = Principal.toText(s); mem = mem; cycle = cycle});
         });
         Buffer.toArray(buf);
     };
 
-    public shared ({caller}) func getServerInfo() : async [{id:Text; cycle: Text}] {
-        [{id = Principal.toText(Principal.fromActor(this)); cycle = Nat.toText((Cycles.balance()/1000000000000)) # " T cycles"}];
+    public shared ({caller}) func getServerInfo() : async [{id:Text; mem : Text; cycle: Text}] {
+        [{id = Principal.toText(Principal.fromActor(this)); mem = ""; cycle = Nat.toText((Cycles.balance()/1000000000000)) # " T cycles"}];
     };
 
     private func _generateFileStorage() : async Result.Result<Principal,Text>{
@@ -550,59 +520,31 @@ shared ({caller}) actor class FileRegistry() = this {
     let NOT_FOUND : Types.HttpResponse = {status_code = 404; headers = []; body = Blob.fromArray([]); upgrade = null; streaming_strategy = null};
     let BAD_REQUEST : Types.HttpResponse = {status_code = 400; headers = []; body = Blob.fromArray([]); upgrade = null; streaming_strategy = null};
     
-    
-
-    public shared func http_request_streaming_callback(token : Types.HttpStreamingCallbackToken) : async Types.HttpStreamingCallbackResponse {
-        let fileHash = token.key;
+    public shared query func http_request_streaming_callback(token : Types.HttpStreamingCallbackToken) : async Types.HttpStreamingCallbackResponse {
+        let hashWithTotalChunk = Buffer.fromIter<Text>(Text.tokens(token.key, #text("-")));
+        if (hashWithTotalChunk.size() != 2) {
+            return {body = Blob.fromArray([]); token = null};
+        };
+        let fileHash = hashWithTotalChunk.get(0);
+        let totalChunk : Nat = _textToNat(hashWithTotalChunk.get(1));
         let chunkId = token.index;
-        let fileTreeId = switch(_streamCache.get(fileHash)) {
-            case (null) { 0 };
-            case (?fileTreeInfo) {
-                fileTreeInfo.fileId;
-            }
-        };
-        let fileTree = switch (_getFileTree(fileTreeId)) {
-            case null return {body = Blob.fromArray([]); token = null};
-            case (?ft) {
-                ft;
-            }
-        };
-        let fm = FileManager.init(fileTree);
-        let file = switch (fm.get(?#file(""), ?#hash(fileHash))) {
-            case null return {body = Blob.fromArray([]); token = null};
-            case (?f) f;
-        };
+
         let p = profiler.push("http_request_streaming_callback." # fileHash # Nat.toText(chunkId));
         profiler.pop(p);
         switch(_streamCache.get(_keyStreamCache(fileHash, chunkId))){
             case(?chunkCache) {
                 let p = profiler.push("http_request_streaming_callback.cache");
                 profiler.pop(p);
-                let res = await _streamContent(fileHash, chunkCache, file.getTotalChunk());
+                let res = _streamContent(fileHash, chunkCache, totalChunk);
                 return {
                     body = res.0;
                     token = res.1;
                 };
             };
             case null {
-                let p = profiler.push("http_request_streaming_callback.non-cache");
+                let p = profiler.push("http_request_streaming_callback.cacheEmpty");
                 profiler.pop(p);
-                // init file tree
-                // find file by hash
-                // get chunk
-                let chunkRet = await file.getChunk(chunkId, false);
-                switch (chunkRet) {
-                    case (#err (e)) {
-                        return return {body = Text.encodeUtf8 (e); token = null};
-                    };
-                    case (#ok (chunk)) {
-                        let res = await _streamContent(fileHash, chunk, file.getTotalChunk());
-                        return {
-                            body = res.0;
-                            token = res.1;
-                        };
-                    };
-                };
+                return return {body = Text.encodeUtf8 ("Cache empty"); token = null};
             };
         };
     };
@@ -630,13 +572,7 @@ shared ({caller}) actor class FileRegistry() = this {
         switch(fm.get(?#file(""), ?#hash(fHash))) {
             case null return _defaultResponse(?("File not exist! : " # fHash));  
             case (?f) {
-                // // support stream callback get file tree -> get file Hash
-                _streamCache.put(fHash, {
-                    fileId = fTreeId;
-                    chunkOrderId = 0;
-                    data = [];
-                });
-                // return await _processFile(f, chunkId);
+                // 
             };
         };
         profiler.pop(p);
@@ -656,7 +592,7 @@ shared ({caller}) actor class FileRegistry() = this {
         hash # "_" # Nat.toText(chunkId);
     };
     
-    private func _streamContent(fileHash : Text, chunk : Types.FileChunk, totalChunk : Nat) : async (Blob, ?Types.HttpStreamingCallbackToken) {
+    private func _streamContent(fileHash : Text, chunk : Types.FileChunk, totalChunk : Nat) : (Blob, ?Types.HttpStreamingCallbackToken) {
         let payload = Blob.fromArray(chunk.data);
         if (chunk.chunkOrderId > 0) {
             _streamCache.delete(_keyStreamCache(fileHash, chunk.chunkOrderId - 1));
@@ -665,34 +601,42 @@ shared ({caller}) actor class FileRegistry() = this {
             let p = profiler.push("_streamContent.lastChunk");
             // remove all cache
             _streamCache.delete(fileHash);
+            var i = 0;
+            while (i < totalChunk) {
+                _streamCache.delete(_keyStreamCache(fileHash, i));
+                i += 1;
+            };
             profiler.pop(p);
             return (payload, null);
             
         };
         let p = profiler.push("_streamContent");
 
-        ignore notify(Principal.toText(Principal.fromActor(this)), (#SyncCache(fileHash, chunk.chunkOrderId + 1)));
+        // notify(Principal.toText(Principal.fromActor(this)), (#SyncCache(fileHash, chunk.chunkOrderId + 1)));
 
         let token = ?{
             content_encoding = "gzip";
             index = chunk.chunkOrderId + 1;
             sha256 = null;
-            key = fileHash;
+            key = fileHash # "-" # Nat.toText(totalChunk);
         };
         profiler.pop(p);
         return (payload, token);
     };
 
-    private func _makeStreamingHttpResponse(fm : FileManager.FileTree, (payload : Blob, token : ?Types.HttpStreamingCallbackToken)) : async Types.HttpResponse {
+    private func _makeStreamingHttpResponse(fm : FileManager.FileTree, (payload : Blob, token : ?Types.HttpStreamingCallbackToken)) : Types.HttpResponse {
+        let h = [("Content-Type", fm.getContentType()),
+                /*("cache-control", "public, max-age=15552000"), ("Content-Length", Nat.toText(contentLength))*/ 
+                ("Transfer-Encoding", "gzip"), 
+                ("Access-Control-Allow-Origin", "*"),
+                ("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"),
+                ("Access-Control-Allow-Headers","'Content-Type, Authorization'")
+                ];
         if (token == null) {
             return {
                 upgrade = ?true;
                 status_code = 200;
-                headers = [("Content-Type", fm.getContentType()),
-                /*("cache-control", "public, max-age=15552000"), ("Content-Length", Nat.toText(contentLength))*/ 
-                ("Transfer-Encoding", "gzip"), 
-                ("Access-Control-Allow-Origin", "*")
-                ];
+                headers = h;
                 body = payload;
                 token = null;
                 streaming_strategy = null;
@@ -701,11 +645,7 @@ shared ({caller}) actor class FileRegistry() = this {
         return {
             upgrade = ?true;
             status_code = 200;
-            headers = [("Content-Type", fm.getContentType()),
-                /*("cache-control", "public, max-age=15552000"), ("Content-Length", Nat.toText(contentLength))*/ 
-                ("Transfer-Encoding", "gzip"), 
-                ("Access-Control-Allow-Origin", "*")
-                ];
+            headers = h;
             body = payload;
             streaming_strategy = ?#Callback({
             token = Option.unwrap(token);
@@ -717,31 +657,28 @@ shared ({caller}) actor class FileRegistry() = this {
     private func _processFile(fm : FileManager.FileTree, chunkId : Nat) : async Types.HttpResponse {
         let p = profiler.push("_processFile");
         // if cache has chunk by hash & chunk id
-        let ret = switch (_streamCache.get(_keyStreamCache(fm.getFileHash(), chunkId))) {
-            case null {
-                let chunkRet = await fm.getChunk(chunkId, false);
-                switch (chunkRet) {
-                    case (#err (e)) {
-                        return _defaultResponse(?e);
-                    };
-                    case (#ok (chunk)) {
-                        await _makeStreamingHttpResponse(fm, await _streamContent(fm.getFileHash(), chunk, fm.getTotalChunk()));
-                    };
-                };
+        let chunkRet = await fm.getChunk(chunkId, false);
+        switch (chunkRet) {
+            case (#err (e)) {
+                return _defaultResponse(?e);
             };
-            case (?chunk) {
-                await _makeStreamingHttpResponse(fm, await _streamContent(fm.getFileHash(), chunk, fm.getTotalChunk()));
+            case (#ok (chunk)) {
+                profiler.pop(p);
+                return _makeStreamingHttpResponse(fm, _streamContent(fm.getFileHash(), chunk, fm.getTotalChunk()));
             };
         };
-        profiler.pop(p);
-        ret;
     };
 
     public shared func http_request_update(request : Types.HttpRequest) : async Types.HttpResponse {
         let p = profiler.push("http_request_update");
 
         let path = Buffer.fromIter<Text>(Text.tokens(request.url, #text("/")));
-        let fHash = Buffer.fromIter<Text>(Text.tokens(path.get(path.size() - 1), #text("?"))).get(0);
+        let buf = Buffer.fromIter<Text>(Text.tokens(path.get(path.size() - 1), #text("?")));
+        let fHash = if (buf.size() > 1) {
+            buf.get(0);
+        } else {
+            path.get(path.size() - 1);
+        };
         let fTreeId = _textToNat(path.get(path.size() - 2));
         let owner = path.get(path.size() - 3);
         let chunkId = switch(_getParam(request.url, "chunkId")) {
@@ -756,12 +693,24 @@ shared ({caller}) actor class FileRegistry() = this {
         switch(fm.get(?#file(""), ?#hash(fHash))) {
             case null return _defaultResponse(?("File not exist! : " # fHash));  
             case (?f) {
+                let p1 = profiler.push("http_request.processCache");
                 // support stream callback get file tree -> get file Hash
                 _streamCache.put(fHash, {
                     fileId = fTreeId;
                     chunkOrderId = 0;
                     data = [];
                 });
+                var i = 0;
+                while (i < f.getTotalChunk()) {
+                    switch (await f.getChunk(i, false)) {
+                        case (#err (e)) {};
+                        case (#ok (chunk)) {
+                            _streamCache.put(_keyStreamCache(fHash, i), chunk);
+                        };
+                    };
+                    i += 1;
+                };
+                profiler.pop(p1);
                 profiler.pop(p);
                 return await _processFile(f, chunkId);
             };

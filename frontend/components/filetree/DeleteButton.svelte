@@ -6,7 +6,7 @@
   import { useCanister } from "@connect2ic/svelte";
   import { Button } from "carbon-components-svelte";
   import { localFileTrees, filesData } from "../../stores.js"
-  import { getIsFolder } from "../../utils"
+  import { getIsFolder, logging } from "../../utils"
 
   export let folder;
   export let toogleInAction;
@@ -16,7 +16,7 @@
   
   async function deleteFileTree() {
     toogleInAction(true);
-    console.log("DELETE");
+    logging("DELETE");
     // remove local
     await recursive(folder, async function syncCallback(file) {
         $filesData[file.hash] = null;
@@ -24,9 +24,9 @@
 
     if (folder.id > 0) {
       let ret = await $fileTreeRegistry.deleteFileTree(folder.id);
-      console.log(ret);
+      logging(ret);
     } else {
-      console.log("File id not exist: " + folder.id)
+      logging("File id not exist: " + folder.id)
       // remove local
       $localFileTrees = [];
     }

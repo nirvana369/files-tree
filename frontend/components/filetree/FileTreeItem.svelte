@@ -25,7 +25,7 @@
   import DeleteButton from './DeleteButton.svelte';
   import DownloadButton from "./DownloadButton.svelte";
   import { Column, InlineLoading } from "carbon-components-svelte";
-  import {walk} from "../../utils";
+  import { walk, logging } from "../../utils";
 
   export let fileTree;
   export let directoryHandle;
@@ -54,8 +54,8 @@
   };
 
   function getFolder() {
-    console.log("SHOW FOLDER");
-    console.log(fileTree);
+    logging("SHOW FOLDER");
+    logging(fileTree);
     return fileTree || getDefaultFolder();
   }
 
